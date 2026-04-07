@@ -22,7 +22,7 @@ const CENTER_WIDTH = 560;
 const CENTER_HEIGHT = Math.round(CENTER_WIDTH * 9 / 16); // 315
 const SIDE_WIDTH = 260;
 const SIDE_STEP = 30; // width reduction per level
-const SLOT = 290; // horizontal spacing between slots
+const SLOT = 190; // horizontal spacing — smaller = more overlap
 
 const ArtworkCarousel = () => {
   const [activeIndex, setActiveIndex] = useState(0);

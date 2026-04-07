@@ -4,6 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Star, CheckCircle, Share2, ChevronLeft } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { applyToCommission } from "@/services/commissionService";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 
 const mockCommissions = [
   { id: 0, title: "企业品牌AI宣传片制作", description: "需要制作一支60秒企业品牌宣传AI影片，风格现代简洁，突出科技感，需包含产品展示、公司文化等内容。", tag: "实名认证" as const, reputation: "信誉优良", deadline: "2026-04-29", category: "商业宣传片", applicants: 0, priceRange: "¥3k ~ 8k", author: "柚柚酒", rating: 5, reviews: 17, completionRate: "17 / 17", handlingFee: "5%", type: "商业用途" },
@@ -26,7 +35,53 @@ const milestones = [
 
 const CommissionDetail = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applyMessage, setApplyMessage] = useState("");
+  const [expectedPrice, setExpectedPrice] = useState("");
+  const [applying, setApplying] = useState(false);
   const commission = mockCommissions[Number(id)] || mockCommissions[0];
+
+  async function handleApply() {
+    if (!user) return;
+    setApplying(true);
+    try {
+      await applyToCommission(
+        commission.id, user.id, user.nickname, applyMessage, expectedPrice
+      );
+      toast({ title: "应征成功！", description: "需求方将会查看你的应征信息。" });
+      setApplyOpen(false);
+    } catch (e: unknown) {
+      toast({ title: "应征失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  function getApplyButton() {
+    if (!user) return (
+      <Button className="w-full rounded-full text-base" size="lg" onClick={() => navigate('/login')}>
+        🎬 登录后应征
+      </Button>
+    );
+    if (user.role === 'client') return (
+      <Button className="w-full rounded-full text-base" size="lg" disabled>
+        甲方账号无法应征
+      </Button>
+    );
+    if (user.verificationStatus !== 'verified') return (
+      <Button className="w-full rounded-full text-base" size="lg" onClick={() => navigate('/onboarding/aigcer')}>
+        完成认证后应征
+      </Button>
+    );
+    return (
+      <Button className="w-full rounded-full text-base" size="lg" onClick={() => setApplyOpen(true)}>
+        🎬 应征项目
+      </Button>
+    );
+  }
 
   const daysLeft = Math.max(0, Math.ceil((new Date(commission.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
 
@@ -70,9 +125,7 @@ const CommissionDetail = () => {
                 <p className="text-lg font-bold text-primary">{commission.handlingFee}</p>
               </div>
               <p className="text-xs text-muted-foreground">{daysLeft} 天后关闭项目</p>
-              <Button className="w-full rounded-full text-base" size="lg">
-                🎬 应征项目
-              </Button>
+              {getApplyButton()}
             </div>
 
             <div className="flex items-center justify-between mt-4 text-xs text-muted-foreground">
@@ -202,6 +255,33 @@ const CommissionDetail = () => {
           </main>
         </div>
       </div>
+        <Dialog open={applyOpen} onOpenChange={setApplyOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>应征项目</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div>
+                <Label>应征留言</Label>
+                <Textarea
+                  className="mt-1" rows={3}
+                  placeholder="介绍你的优势、创作思路..."
+                  value={applyMessage} onChange={e => setApplyMessage(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>期望报酬</Label>
+                <Input className="mt-1" placeholder="如：¥5000" value={expectedPrice} onChange={e => setExpectedPrice(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setApplyOpen(false)}>取消</Button>
+              <Button onClick={handleApply} disabled={!applyMessage || !expectedPrice || applying}>
+                {applying ? "提交中..." : "确认应征"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { generateId } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,7 +37,7 @@ export default function OnboardingAigcer() {
         reader.readAsDataURL(file);
       });
       setPortfolio(prev => [...prev, {
-        id: crypto.randomUUID(),
+        id: generateId(),
         title: file.name.replace(/\.[^.]+$/, ''),
         description: "",
         imageBase64: base64,

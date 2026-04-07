@@ -1,5 +1,6 @@
 // src/services/authService.ts
 import { StoredUser, User, UserRole } from '@/types/user';
+import { generateId } from '@/lib/utils';
 
 const USERS_KEY = 'vai_users';
 const CURRENT_KEY = 'vai_current_user_id';
@@ -34,7 +35,7 @@ export async function register(params: RegisterParams): Promise<User> {
   );
   if (exists) throw new Error('该账号已注册');
   const { password, ...rest } = {
-    id: crypto.randomUUID(),
+    id: generateId(),
     phone: params.phone,
     email: params.email,
     nickname: params.nickname,

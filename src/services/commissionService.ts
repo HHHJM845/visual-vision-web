@@ -1,4 +1,5 @@
 import { Commission, Application } from '@/types/commission';
+import { generateId } from '@/lib/utils';
 
 const COMMISSIONS_KEY = 'vai_commissions';
 const APPLICATIONS_KEY = 'vai_applications';
@@ -67,7 +68,7 @@ export async function applyToCommission(
     throw new Error('已经应征过该项目');
   }
   const application: Application = {
-    id: crypto.randomUUID(),
+    id: generateId(),
     commissionId, aigcerId, aigcerNickname, message, expectedPrice,
     status: 'pending',
     appliedAt: new Date().toISOString(),

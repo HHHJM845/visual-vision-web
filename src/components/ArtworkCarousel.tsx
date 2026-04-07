@@ -17,12 +17,9 @@ const artworks = [
 
 const categories = ["商业宣传片", "短视频", "概念影像", "创意短片"];
 
-// 16:9 dimensions
-const CENTER_WIDTH = 560;
-const CENTER_HEIGHT = Math.round(CENTER_WIDTH * 9 / 16); // 315
-const SIDE_WIDTH = 260;
-const SIDE_STEP = 30; // width reduction per level
-const SLOT = 190; // horizontal spacing — smaller = more overlap
+const CARD_W = 380;
+const CARD_H = Math.round(CARD_W * 9 / 16); // 214px — 16:9
+const GAP = 10;
 
 const ArtworkCarousel = () => {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -36,6 +33,7 @@ const ArtworkCarousel = () => {
     return () => clearInterval(intervalRef.current);
   }, []);
 
+  // Keep thumbnail strip centered on active item
   useEffect(() => {
     const container = scrollRef.current;
     const el = container?.children[activeIndex] as HTMLElement;
@@ -46,9 +44,13 @@ const ArtworkCarousel = () => {
     }
   }, [activeIndex]);
 
+  // translateX so active card sits at the horizontal center of the viewport
+  const trackOffset = `calc(50% - ${activeIndex * (CARD_W + GAP) + CARD_W / 2}px)`;
+
   return (
-    <section className="py-20 bg-background overflow-hidden">
-      <div className="max-w-5xl mx-auto px-4 text-center mb-8">
+    <section className="py-16 bg-background">
+      {/* Header */}
+      <div className="max-w-5xl mx-auto px-4 text-center mb-10">
         <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-3">
           万名AIGCer，涵盖各式风格的优选影片。
         </h2>
@@ -58,40 +60,37 @@ const ArtworkCarousel = () => {
         </p>
       </div>
 
-      {/* Main carousel */}
-      <div className="relative w-full overflow-hidden" style={{ height: CENTER_HEIGHT + 60 }}>
-        <div className="absolute inset-0 flex items-center justify-center">
+      {/* Full-width sliding strip */}
+      <div
+        className="w-full overflow-hidden"
+        style={{ height: CARD_H + 40 }}
+      >
+        <div
+          className="flex transition-transform duration-500 ease-in-out items-center"
+          style={{
+            gap: GAP,
+            transform: `translateX(${trackOffset})`,
+            height: CARD_H + 40,
+          }}
+        >
           {artworks.map((url, i) => {
-            let diff = i - activeIndex;
-            const n = artworks.length;
-            if (diff > n / 2) diff -= n;
-            if (diff < -n / 2) diff += n;
-            const absDiff = Math.abs(diff);
-            if (absDiff > 3) return null;
-
-            const isCenter = absDiff === 0;
-            const width = isCenter ? CENTER_WIDTH : Math.max(SIDE_WIDTH - (absDiff - 1) * SIDE_STEP, 100);
-            const height = Math.round(width * 9 / 16);
-            const blur = isCenter ? 0 : absDiff * 2;
-            const brightness = isCenter ? 1 : Math.max(0.5, 1 - absDiff * 0.2);
-            const opacity = absDiff > 2 ? 0.3 : isCenter ? 1 : 0.75;
-            const zIndex = 20 - absDiff;
-            const translateX = diff * SLOT;
-
+            const isActive = i === activeIndex;
             return (
               <div
                 key={i}
-                className="absolute transition-all duration-500 cursor-pointer overflow-hidden rounded-lg"
-                style={{
-                  width,
-                  height,
-                  transform: `translateX(${translateX}px)`,
-                  zIndex,
-                  opacity,
-                  filter: `blur(${blur}px) brightness(${brightness})`,
-                  boxShadow: isCenter ? "0 8px 40px rgba(0,0,0,0.35)" : "none",
-                }}
                 onClick={() => setActiveIndex(i)}
+                className="flex-shrink-0 rounded-xl overflow-hidden cursor-pointer transition-all duration-500"
+                style={{
+                  width: CARD_W,
+                  height: CARD_H,
+                  transform: isActive ? "scale(1.07)" : "scale(1)",
+                  opacity: isActive ? 1 : 0.65,
+                  boxShadow: isActive
+                    ? "0 12px 40px rgba(0,0,0,0.3)"
+                    : "0 2px 8px rgba(0,0,0,0.08)",
+                  zIndex: isActive ? 10 : 1,
+                  position: "relative",
+                }}
               >
                 <img
                   src={url}

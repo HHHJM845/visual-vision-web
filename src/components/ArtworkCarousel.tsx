@@ -1,33 +1,34 @@
 import { useEffect, useRef, useState } from "react";
 
 const artworks = [
-  "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1611457194403-d3571b6a2924?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1613376023733-0a73315d9b06?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1560393464-5c69a73c5770?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1618336753974-aae8e04506aa?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1580477667995-2b94f01c9516?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1578632292335-df3abbb0d586?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1541562232579-512a21360020?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1535223289827-42f1e9919769?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1551085254-e96b210db58a?w=400&h=500&fit=crop",
-  "https://images.unsplash.com/photo-1616627988170-851c46d63560?w=400&h=500&fit=crop",
+  "/artworks/1.png",
+  "/artworks/2.png",
+  "/artworks/3.png",
+  "/artworks/4.png",
+  "/artworks/5.png",
+  "/artworks/6.png",
+  "/artworks/7.png",
+  "/artworks/8.png",
+  "/artworks/9.png",
+  "/artworks/10.png",
+  "/artworks/11.png",
+  "/artworks/12.png",
 ];
 
 const categories = ["商业宣传片", "短视频", "概念影像", "创意短片"];
 
-const ITEM_WIDTH = 220;
-const CENTER_WIDTH = 340;
-const CENTER_HEIGHT = 420;
-const SIDE_HEIGHT = 300;
+// 16:9 dimensions
+const CENTER_WIDTH = 560;
+const CENTER_HEIGHT = Math.round(CENTER_WIDTH * 9 / 16); // 315
+const SIDE_WIDTH = 260;
+const SIDE_STEP = 30; // width reduction per level
+const SLOT = 290; // horizontal spacing between slots
 
 const ArtworkCarousel = () => {
   const [activeIndex, setActiveIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
 
-  // Auto-scroll
   useEffect(() => {
     intervalRef.current = setInterval(() => {
       setActiveIndex((prev) => (prev + 1) % artworks.length);
@@ -35,7 +36,6 @@ const ArtworkCarousel = () => {
     return () => clearInterval(intervalRef.current);
   }, []);
 
-  // Scroll thumbnails into view
   useEffect(() => {
     const container = scrollRef.current;
     const el = container?.children[activeIndex] as HTMLElement;
@@ -59,7 +59,7 @@ const ArtworkCarousel = () => {
       </div>
 
       {/* Main carousel */}
-      <div className="relative w-full overflow-hidden" style={{ height: CENTER_HEIGHT + 40 }}>
+      <div className="relative w-full overflow-hidden" style={{ height: CENTER_HEIGHT + 60 }}>
         <div className="absolute inset-0 flex items-center justify-center">
           {artworks.map((url, i) => {
             const diff = i - activeIndex;
@@ -67,15 +67,13 @@ const ArtworkCarousel = () => {
             if (absDiff > 3) return null;
 
             const isCenter = absDiff === 0;
-            const width = isCenter ? CENTER_WIDTH : ITEM_WIDTH - absDiff * 20;
-            const height = isCenter ? CENTER_HEIGHT : SIDE_HEIGHT - absDiff * 20;
+            const width = isCenter ? CENTER_WIDTH : Math.max(SIDE_WIDTH - (absDiff - 1) * SIDE_STEP, 100);
+            const height = Math.round(width * 9 / 16);
             const blur = isCenter ? 0 : absDiff * 2;
             const brightness = isCenter ? 1 : Math.max(0.5, 1 - absDiff * 0.2);
             const opacity = absDiff > 2 ? 0.3 : isCenter ? 1 : 0.75;
             const zIndex = 20 - absDiff;
-
-            // Space images out from center: each slot is ITEM_WIDTH wide
-            const translateX = diff * (ITEM_WIDTH + 10);
+            const translateX = diff * SLOT;
 
             return (
               <div
@@ -120,7 +118,7 @@ const ArtworkCarousel = () => {
                   : "border-transparent opacity-60 hover:opacity-90"
               }`}
             >
-              <img src={url} alt="" className="w-12 h-12 object-cover" />
+              <img src={url} alt="" className="w-16 h-9 object-cover" />
             </button>
           ))}
         </div>

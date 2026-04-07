@@ -1,7 +1,20 @@
-import heroBg from "@/assets/hero-bg.jpg";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
+const videos = ["/hero-bg.mp4", "/hero-bg2.mp4"];
+
 const HeroSection = () => {
+  const [current, setCurrent] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  function handleEnded() {
+    setCurrent((prev) => (prev + 1) % videos.length);
+  }
+
+  function goTo(index: number) {
+    setCurrent(index);
+  }
+
   return (
     <section
       className="relative w-full overflow-hidden"
@@ -10,13 +23,17 @@ const HeroSection = () => {
         borderRadius: "0 0 50% 50% / 0 0 80px 80px",
       }}
     >
-      <img
-        src={heroBg}
-        alt="AI影制"
+      <video
+        ref={videoRef}
+        key={current}
+        autoPlay
+        muted
+        playsInline
+        onEnded={handleEnded}
         className="absolute inset-0 w-full h-full object-cover object-center"
-        width={1920}
-        height={1080}
-      />
+      >
+        <source src={videos[current]} type="video/mp4" />
+      </video>
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
 
       {/* 内容垂直居中，整体偏下 */}
@@ -46,6 +63,19 @@ const HeroSection = () => {
             我是创作者
           </Button>
         </div>
+      </div>
+
+      {/* 轮播指示点 */}
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 flex gap-2">
+        {videos.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => goTo(i)}
+            className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
+              i === current ? "bg-white w-6" : "bg-white/50"
+            }`}
+          />
+        ))}
       </div>
     </section>
   );

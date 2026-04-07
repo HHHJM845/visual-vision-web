@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -20,7 +20,9 @@ type FormValues = z.infer<typeof schema>;
 export default function Register() {
   const navigate = useNavigate();
   const { setUser } = useAuth();
-  const [role, setRole] = useState<UserRole>('aigcer');
+  const [searchParams] = useSearchParams();
+  const initialRole = searchParams.get('role') === 'client' ? 'client' : 'aigcer';
+  const [role, setRole] = useState<UserRole>(initialRole);
   const [error, setError] = useState("");
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormValues>({

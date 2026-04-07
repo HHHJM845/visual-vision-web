@@ -17,9 +17,30 @@ const artworks = [
 
 const categories = ["商业宣传片", "短视频", "概念影像", "创意短片"];
 
-const CARD_W = 380;
-const CARD_H = Math.round(CARD_W * 9 / 16); // 214px — 16:9
+// Size per distance from center (16:9)
+const SIZES = [
+  { w: 560, h: 315 }, // diff=0  center
+  { w: 370, h: 208 }, // diff=1
+  { w: 260, h: 146 }, // diff=2
+  { w: 190, h: 107 }, // diff=3
+];
 const GAP = 10;
+const MAX_DIFF = 3;
+const CONTAINER_H = SIZES[0].h + 80;
+
+const OPACITY = [1, 0.82, 0.6, 0.35];
+
+/** Compute pixel offset from center for a given diff value */
+function getOffset(diff: number): number {
+  if (diff === 0) return 0;
+  const sign = diff > 0 ? 1 : -1;
+  const abs = Math.abs(diff);
+  let offset = SIZES[0].w / 2 + GAP + SIZES[1].w / 2; // diff=1 base
+  for (let i = 2; i <= abs; i++) {
+    offset += SIZES[i - 1].w / 2 + GAP + SIZES[i].w / 2;
+  }
+  return sign * offset;
+}
 
 const ArtworkCarousel = () => {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -33,7 +54,6 @@ const ArtworkCarousel = () => {
     return () => clearInterval(intervalRef.current);
   }, []);
 
-  // Keep thumbnail strip centered on active item
   useEffect(() => {
     const container = scrollRef.current;
     const el = container?.children[activeIndex] as HTMLElement;
@@ -43,9 +63,6 @@ const ArtworkCarousel = () => {
       container.scrollTo({ left: scrollLeft, behavior: "smooth" });
     }
   }, [activeIndex]);
-
-  // translateX so active card sits at the horizontal center of the viewport
-  const trackOffset = `calc(50% - ${activeIndex * (CARD_W + GAP) + CARD_W / 2}px)`;
 
   return (
     <section className="py-16 bg-background">
@@ -60,43 +77,40 @@ const ArtworkCarousel = () => {
         </p>
       </div>
 
-      {/* Full-width sliding strip */}
-      <div
-        className="w-full overflow-hidden"
-        style={{ height: CARD_H + 40 }}
-      >
-        <div
-          className="flex transition-transform duration-500 ease-in-out items-center"
-          style={{
-            gap: GAP,
-            transform: `translateX(${trackOffset})`,
-            height: CARD_H + 40,
-          }}
-        >
+      {/* Carousel */}
+      <div className="relative w-full overflow-hidden" style={{ height: CONTAINER_H }}>
+        <div className="absolute inset-0 flex items-center justify-center">
           {artworks.map((url, i) => {
-            const isActive = i === activeIndex;
+            let diff = i - activeIndex;
+            const n = artworks.length;
+            if (diff > n / 2) diff -= n;
+            if (diff < -n / 2) diff += n;
+            const absDiff = Math.abs(diff);
+            if (absDiff > MAX_DIFF) return null;
+
+            const { w, h } = SIZES[absDiff];
+            const translateX = getOffset(diff);
+            const opacity = OPACITY[absDiff];
+            const zIndex = 20 - absDiff;
+
             return (
               <div
                 key={i}
                 onClick={() => setActiveIndex(i)}
-                className="flex-shrink-0 rounded-xl overflow-hidden cursor-pointer transition-all duration-500"
+                className="absolute transition-all duration-500 cursor-pointer overflow-hidden rounded-xl"
                 style={{
-                  width: CARD_W,
-                  height: CARD_H,
-                  transform: isActive ? "scale(1.07)" : "scale(1)",
-                  opacity: isActive ? 1 : 0.65,
-                  boxShadow: isActive
-                    ? "0 12px 40px rgba(0,0,0,0.3)"
-                    : "0 2px 8px rgba(0,0,0,0.08)",
-                  zIndex: isActive ? 10 : 1,
-                  position: "relative",
+                  width: w,
+                  height: h,
+                  transform: `translateX(${translateX}px)`,
+                  opacity,
+                  zIndex,
+                  boxShadow:
+                    absDiff === 0
+                      ? "0 16px 48px rgba(0,0,0,0.32)"
+                      : "0 4px 12px rgba(0,0,0,0.12)",
                 }}
               >
-                <img
-                  src={url}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
+                <img src={url} alt="" className="w-full h-full object-cover" />
               </div>
             );
           })}
@@ -104,7 +118,7 @@ const ArtworkCarousel = () => {
       </div>
 
       {/* Thumbnail strip */}
-      <div className="max-w-4xl mx-auto px-4 mt-6">
+      <div className="max-w-4xl mx-auto px-4 mt-8">
         <div
           ref={scrollRef}
           className="flex gap-2 overflow-x-auto py-2 justify-center"

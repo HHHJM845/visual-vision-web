@@ -1,11 +1,16 @@
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 
 const videos = ["/hero-bg.mp4", "/hero-bg2.mp4"];
 
 const HeroSection = () => {
   const [current, setCurrent] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
   function handleEnded() {
     setCurrent((prev) => (prev + 1) % videos.length);
@@ -13,6 +18,26 @@ const HeroSection = () => {
 
   function goTo(index: number) {
     setCurrent(index);
+  }
+
+  function handleClient() {
+    if (!user) {
+      navigate("/register?role=client");
+    } else if (user.role === "client") {
+      navigate("/commissions/new");
+    } else {
+      toast.error("您已是创作者账号，无法切换角色");
+    }
+  }
+
+  function handleAigcer() {
+    if (!user) {
+      navigate("/register?role=aigcer");
+    } else if (user.role === "aigcer") {
+      navigate("/commissions");
+    } else {
+      toast.error("您已是需求方账号，无法切换角色");
+    }
   }
 
   return (
@@ -52,12 +77,14 @@ const HeroSection = () => {
         <div className="flex gap-8">
           <Button
             size="lg"
+            onClick={handleClient}
             className="px-14 py-4 h-auto rounded-full text-lg font-semibold bg-primary hover:bg-primary/90 shadow-xl"
           >
             我是需求方
           </Button>
           <Button
             size="lg"
+            onClick={handleAigcer}
             className="px-14 py-4 h-auto rounded-full text-lg font-semibold bg-primary hover:bg-primary/90 shadow-xl"
           >
             我是创作者

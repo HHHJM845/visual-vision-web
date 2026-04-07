@@ -39,7 +39,10 @@ export default function Login() {
     <div className="min-h-screen bg-muted flex items-center justify-center px-4">
       <div className="w-full max-w-sm bg-card border border-border rounded-xl p-8 shadow-sm">
         <div className="text-center mb-8">
-          <Link to="/" className="text-2xl font-bold text-primary">🎬 AI影制</Link>
+          <Link to="/" className="inline-flex items-center gap-2 text-2xl font-bold text-primary">
+            <img src="/logo.png" alt="跃然承制" className="w-8 h-8 object-contain" />
+            跃然承制
+          </Link>
           <p className="text-muted-foreground text-sm mt-2">登录你的账号</p>
         </div>
 

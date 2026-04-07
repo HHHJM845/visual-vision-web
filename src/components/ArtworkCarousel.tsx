@@ -62,7 +62,10 @@ const ArtworkCarousel = () => {
       <div className="relative w-full overflow-hidden" style={{ height: CENTER_HEIGHT + 60 }}>
         <div className="absolute inset-0 flex items-center justify-center">
           {artworks.map((url, i) => {
-            const diff = i - activeIndex;
+            let diff = i - activeIndex;
+            const n = artworks.length;
+            if (diff > n / 2) diff -= n;
+            if (diff < -n / 2) diff += n;
             const absDiff = Math.abs(diff);
             if (absDiff > 3) return null;
 

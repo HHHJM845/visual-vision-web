@@ -11,7 +11,7 @@ import { register as registerUser } from "@/services/authService";
 import { UserRole } from "@/types/user";
 
 const schema = z.object({
-  phone: z.string().min(11, "请输入有效手机号").max(11),
+  email: z.string().email("请输入有效的邮箱地址"),
   nickname: z.string().min(2, "昵称至少2个字"),
   password: z.string().min(6, "密码至少6位"),
 });
@@ -33,8 +33,10 @@ export default function Register() {
     setError("");
     try {
       const user = await registerUser({
-        phone: data.phone, email: "",
-        password: data.password, nickname: data.nickname, role,
+        email: data.email,
+        password: data.password,
+        nickname: data.nickname,
+        role,
       });
       setUser(user);
       navigate(role === 'client' ? '/onboarding/client' : '/onboarding/aigcer');
@@ -54,7 +56,6 @@ export default function Register() {
           <p className="text-muted-foreground text-sm mt-2">创建新账号</p>
         </div>
 
-        {/* 角色选择 */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           {([['aigcer', '🎬', '我是AIGCer', '接项目·展示作品'], ['client', '📋', '我是需求方', '发项目·找承制']] as const).map(
             ([r, emoji, title, sub]) => (
@@ -78,9 +79,9 @@ export default function Register() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
-            <Label htmlFor="phone">手机号</Label>
-            <Input id="phone" placeholder="请输入手机号" className="mt-1" {...register("phone")} />
-            {errors.phone && <p className="text-destructive text-xs mt-1">{errors.phone.message}</p>}
+            <Label htmlFor="email">邮箱</Label>
+            <Input id="email" type="email" placeholder="请输入邮箱地址" className="mt-1" {...register("email")} />
+            {errors.email && <p className="text-destructive text-xs mt-1">{errors.email.message}</p>}
           </div>
           <div>
             <Label htmlFor="nickname">昵称</Label>

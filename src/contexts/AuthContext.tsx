@@ -2,11 +2,12 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '@/types/user';
 import { getCurrentUser, logout as serviceLogout } from '@/services/authService';
+import { supabase } from '@/lib/supabase';
 
 interface AuthContextValue {
   user: User | null;
   setUser: (user: User | null) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -17,12 +18,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setUser(getCurrentUser());
-    setIsLoading(false);
+    // Load initial session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const u = await getCurrentUser();
+        setUser(u);
+      }
+      setIsLoading(false);
+    });
+
+    // Listen for session changes (login/logout/token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (session?.user) {
+          const u = await getCurrentUser();
+          setUser(u);
+        } else {
+          setUser(null);
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  function logout() {
-    serviceLogout();
+  async function logout() {
+    await serviceLogout();
     setUser(null);
   }
 

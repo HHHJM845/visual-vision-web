@@ -48,7 +48,7 @@ export default function Login() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
-            <Label htmlFor="account">手机号 / 邮箱</Label>
+            <Label htmlFor="account">邮箱</Label>
             <Input id="account" type="email" placeholder="请输入邮箱地址" className="mt-1" {...register("account")} />
             {errors.account && <p className="text-destructive text-xs mt-1">{errors.account.message}</p>}
           </div>

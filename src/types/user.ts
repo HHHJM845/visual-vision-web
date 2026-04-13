@@ -7,7 +7,7 @@ export interface PortfolioItem {
   id: string;
   title: string;
   description: string;
-  imageBase64: string;
+  imageUrl: string;
 }
 
 export interface AigcerProfile {
@@ -28,9 +28,4 @@ export interface User {
   aigcerProfile?: AigcerProfile;
   avatar?: string;
   createdAt: string;
-}
-
-/** localStorage 内部存储格式（包含密码，仅 mock 使用）*/
-export interface StoredUser extends User {
-  password: string;
 }

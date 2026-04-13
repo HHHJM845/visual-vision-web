@@ -1,20 +1,30 @@
 // src/services/authService.ts
-import { StoredUser, User, UserRole } from '@/types/user';
-import { generateId } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
+import { User, UserRole, PortfolioItem } from '@/types/user';
 
-const USERS_KEY = 'vai_users';
-const CURRENT_KEY = 'vai_current_user_id';
-
-function getStoredUsers(): StoredUser[] {
-  try { return JSON.parse(localStorage.getItem(USERS_KEY) || '[]'); }
-  catch { return []; }
-}
-function saveStoredUsers(users: StoredUser[]) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+export function mapProfile(row: Record<string, unknown>): User {
+  return {
+    id: row.id as string,
+    email: row.email as string,
+    phone: (row.phone as string) || '',
+    nickname: row.nickname as string,
+    role: row.role as UserRole,
+    verificationStatus: row.verification_status as User['verificationStatus'],
+    clientVerificationType: row.client_verification_type as User['clientVerificationType'],
+    avatar: row.avatar_url as string | undefined,
+    createdAt: row.created_at as string,
+    aigcerProfile: row.aigcer_bio
+      ? {
+          bio: row.aigcer_bio as string,
+          styles: (row.aigcer_styles as string[]) || [],
+          tools: (row.aigcer_tools as string[]) || [],
+          portfolio: (row.aigcer_portfolio as PortfolioItem[]) || [],
+        }
+      : undefined,
+  };
 }
 
 export interface RegisterParams {
-  phone: string;
   email: string;
   password: string;
   nickname: string;
@@ -22,67 +32,83 @@ export interface RegisterParams {
 }
 
 export interface LoginParams {
-  account: string; // phone or email
+  account: string;
   password: string;
 }
 
 export async function register(params: RegisterParams): Promise<User> {
-  await new Promise(r => setTimeout(r, 300));
-  const users = getStoredUsers();
-  const exists = users.find(u =>
-    (params.phone && u.phone === params.phone) ||
-    (params.email && u.email === params.email)
-  );
-  if (exists) throw new Error('该账号已注册');
-  const { password, ...rest } = {
-    id: generateId(),
-    phone: params.phone,
+  const { data, error } = await supabase.auth.signUp({
+    email: params.email,
+    password: params.password,
+  });
+  if (error) {
+    throw new Error(error.message === 'User already registered' ? '该邮箱已注册' : error.message);
+  }
+
+  const { error: profileError } = await supabase.from('profiles').insert({
+    id: data.user!.id,
     email: params.email,
     nickname: params.nickname,
     role: params.role,
-    verificationStatus: 'none' as const,
-    password: params.password,
-    createdAt: new Date().toISOString(),
-  };
-  const storedUser: StoredUser = { ...rest, password };
-  users.push(storedUser);
-  saveStoredUsers(users);
-  localStorage.setItem(CURRENT_KEY, storedUser.id);
-  return rest;
+    verification_status: 'none',
+    phone: '',
+  });
+  if (profileError) throw new Error(profileError.message);
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', data.user!.id)
+    .single();
+
+  return mapProfile(profile);
 }
 
 export async function login(params: LoginParams): Promise<User> {
-  await new Promise(r => setTimeout(r, 300));
-  const users = getStoredUsers();
-  const found = users.find(u =>
-    (u.phone === params.account || u.email === params.account) &&
-    u.password === params.password
-  );
-  if (!found) throw new Error('账号或密码错误');
-  localStorage.setItem(CURRENT_KEY, found.id);
-  const { password: _, ...user } = found;
-  return user;
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: params.account,
+    password: params.password,
+  });
+  if (error) throw new Error('账号或密码错误');
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', data.user.id)
+    .single();
+  if (profileError) throw new Error(profileError.message);
+
+  return mapProfile(profile);
 }
 
-export function logout(): void {
-  localStorage.removeItem(CURRENT_KEY);
+export async function logout(): Promise<void> {
+  await supabase.auth.signOut();
 }
 
-export function getCurrentUser(): User | null {
-  const id = localStorage.getItem(CURRENT_KEY);
-  if (!id) return null;
-  const found = getStoredUsers().find(u => u.id === id);
-  if (!found) return null;
-  const { password: _, ...user } = found;
-  return user;
+export async function getCurrentUser(): Promise<User | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+  if (!profile) return null;
+
+  return mapProfile(profile);
 }
 
-export function updateStoredUser(userId: string, updates: Partial<StoredUser>): User {
-  const users = getStoredUsers();
-  const idx = users.findIndex(u => u.id === userId);
-  if (idx === -1) throw new Error('User not found');
-  users[idx] = { ...users[idx], ...updates };
-  saveStoredUsers(users);
-  const { password: _, ...user } = users[idx];
-  return user;
+export async function updateStoredUser(
+  userId: string,
+  updates: Record<string, unknown>,
+): Promise<User> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', userId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return mapProfile(data);
 }

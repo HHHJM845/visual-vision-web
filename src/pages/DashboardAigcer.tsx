@@ -129,7 +129,7 @@ export default function DashboardAigcer() {
                 <div className="grid grid-cols-3 gap-3">
                   {user.aigcerProfile.portfolio.map(item => (
                     <div key={item.id} className="aspect-square rounded-lg overflow-hidden bg-accent">
-                      <img src={item.imageBase64} alt={item.title} className="w-full h-full object-cover" />
+                      <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover" />
                     </div>
                   ))}
                 </div>

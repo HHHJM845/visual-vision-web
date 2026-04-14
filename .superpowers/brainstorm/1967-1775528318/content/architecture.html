@@ -1,0 +1,67 @@
+<h2>整体架构设计</h2>
+<p class="subtitle">新增模块与现有代码的关系</p>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:16px">
+
+  <div class="mockup">
+    <div class="mockup-header">新增文件结构</div>
+    <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:2">
+      <div style="color:var(--accent-color)">src/</div>
+      <div style="padding-left:16px;color:var(--accent-color)">services/ <span style="color:var(--muted-color);font-size:11px">← 新增：mock 服务层</span></div>
+      <div style="padding-left:32px">authService.ts <span style="color:var(--muted-color);font-size:11px">登录/注册</span></div>
+      <div style="padding-left:32px">userService.ts <span style="color:var(--muted-color);font-size:11px">用户信息/认证</span></div>
+      <div style="padding-left:32px">commissionService.ts <span style="color:var(--muted-color);font-size:11px">项目 CRUD</span></div>
+      <div style="padding-left:16px;color:var(--accent-color)">contexts/ <span style="color:var(--muted-color);font-size:11px">← 新增：全局状态</span></div>
+      <div style="padding-left:32px">AuthContext.tsx <span style="color:var(--muted-color);font-size:11px">登录态 / 用户信息</span></div>
+      <div style="padding-left:16px;color:var(--accent-color)">types/ <span style="color:var(--muted-color);font-size:11px">← 新增：类型定义</span></div>
+      <div style="padding-left:32px">user.ts · commission.ts</div>
+      <div style="padding-left:16px;color:var(--accent-color)">pages/ <span style="color:var(--muted-color);font-size:11px">← 新增 6 个页面</span></div>
+      <div style="padding-left:32px">Login.tsx</div>
+      <div style="padding-left:32px">Register.tsx</div>
+      <div style="padding-left:32px">OnboardingAigcer.tsx</div>
+      <div style="padding-left:32px">OnboardingClient.tsx</div>
+      <div style="padding-left:32px">DashboardClient.tsx</div>
+      <div style="padding-left:32px">DashboardAigcer.tsx</div>
+      <div style="padding-left:16px">components/ <span style="color:var(--muted-color);font-size:11px">← 修改 Navbar</span></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="mockup" style="margin-bottom:16px">
+      <div class="mockup-header">数据流</div>
+      <div class="mockup-body" style="font-size:13px;line-height:1.8">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="background:var(--accent-color);color:white;padding:2px 8px;border-radius:4px;font-size:11px">页面组件</span>
+          <span>→ useQuery / useMutation</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="background:var(--accent-color);color:white;padding:2px 8px;border-radius:4px;font-size:11px">React Query</span>
+          <span>→ 调用 service 函数</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="background:var(--accent-color);color:white;padding:2px 8px;border-radius:4px;font-size:11px">Service 层</span>
+          <span>→ mock 返回 Promise</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="background:var(--accent-color);color:white;padding:2px 8px;border-radius:4px;font-size:11px">localStorage</span>
+          <span>持久化用户状态</span>
+        </div>
+        <hr style="margin:12px 0;border-color:var(--border-color)">
+        <div style="font-size:12px;color:var(--muted-color)">后端接入时：只换 service 层实现，组件代码不动</div>
+      </div>
+    </div>
+
+    <div class="mockup">
+      <div class="mockup-header">新增路由</div>
+      <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:2">
+        <div>/login</div>
+        <div>/register</div>
+        <div>/onboarding/aigcer</div>
+        <div>/onboarding/client</div>
+        <div>/dashboard/client</div>
+        <div>/dashboard/aigcer</div>
+      </div>
+    </div>
+  </div>
+
+</div>

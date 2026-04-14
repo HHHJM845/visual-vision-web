@@ -40,20 +40,20 @@ export async function register(params: RegisterParams): Promise<User> {
   const { data, error } = await supabase.auth.signUp({
     email: params.email,
     password: params.password,
+    options: {
+      data: {
+        nickname: params.nickname,
+        role: params.role,
+      },
+    },
   });
   if (error) {
     throw new Error(error.message === 'User already registered' ? '该邮箱已注册' : error.message);
   }
 
-  const { error: profileError } = await supabase.from('profiles').insert({
-    id: data.user!.id,
-    email: params.email,
-    nickname: params.nickname,
-    role: params.role,
-    verification_status: 'none',
-    phone: '',
-  });
-  if (profileError) throw new Error(profileError.message);
+  // Profile is auto-created by database trigger on_auth_user_created
+  // Wait briefly for trigger to complete, then fetch profile
+  await new Promise(r => setTimeout(r, 500));
 
   const { data: profile } = await supabase
     .from('profiles')

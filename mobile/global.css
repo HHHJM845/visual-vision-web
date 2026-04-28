@@ -1,7 +1,0 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-.glass-effect {
-  background-color: rgba(243, 244, 245, 0.85);
-}

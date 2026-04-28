@@ -1,4 +1,4 @@
-import { Calendar, Diamond, Users } from "lucide-react";
+import { Calendar, Diamond, Users, ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
 
@@ -34,10 +34,13 @@ const CommissionCard = ({
   id = 0,
 }: CommissionCardProps) => {
   return (
-    <Link to={`/commissions/${id}`} className="block border border-border rounded-lg p-5 hover:shadow-md transition-shadow cursor-pointer bg-card">
+    <Link to={`/commissions/${id}`} className="group block cursor-pointer rounded-xl border border-border bg-card p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg">
       <div className="flex gap-4">
         <div className="flex-1 min-w-0">
-          <h3 className="text-base font-semibold text-card-foreground mb-2 truncate">{title}</h3>
+          <div className="mb-2 flex items-start justify-between gap-3">
+            <h3 className="text-base font-semibold text-card-foreground line-clamp-1">{title}</h3>
+            <ArrowUpRight className="h-4 w-4 flex-shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+          </div>
           <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{description}</p>
           <div className="flex items-center gap-2 mb-3">
             <Badge className={`text-xs ${tagColorMap[tag]} border-0`}>{tag}</Badge>
@@ -59,7 +62,8 @@ const CommissionCard = ({
           <img src={thumbnail} alt={title} className="w-16 h-16 rounded object-cover flex-shrink-0" loading="lazy" />
         )}
       </div>
-      <div className="text-right mt-2">
+      <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+        <span className="text-xs text-muted-foreground">托管预算</span>
         <span className="text-lg font-bold text-price">{priceRange}</span>
       </div>
     </Link>

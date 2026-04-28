@@ -1,81 +1,154 @@
+import { useMemo, useState } from "react";
+import { Aperture, Film, Heart, Search, Sparkles, X } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import GalleryCard from "@/components/GalleryCard";
+import { FilterChip, PageHero, PageShell } from "@/components/PageChrome";
+import { SearchEmptyState } from "@/components/StateViews";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { galleryItems } from "@/data/mockData";
 
 const categories = ["全部", "商业宣传片", "创意短片", "概念影像", "短视频"];
 const styles = ["全部", "二次元风", "国风古典", "欧美写实"];
 const techniques = ["全部", "AI绘图生成", "AI动效合成", "AI真人合成", "AI写实渲染"];
 
-const mockArtworks = [
-  { imageUrl: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&h=600&fit=crop", likes: 557 },
-  { imageUrl: "https://images.unsplash.com/photo-1611457194403-d3571b6a2924?w=400&h=500&fit=crop", likes: 118 },
-  { imageUrl: "https://images.unsplash.com/photo-1613376023733-0a73315d9b06?w=400&h=450&fit=crop", likes: 282 },
-  { imageUrl: "https://images.unsplash.com/photo-1560393464-5c69a73c5770?w=400&h=400&fit=crop", likes: 266 },
-  { imageUrl: "https://images.unsplash.com/photo-1618336753974-aae8e04506aa?w=400&h=550&fit=crop", likes: 13 },
-  { imageUrl: "https://images.unsplash.com/photo-1580477667995-2b94f01c9516?w=400&h=500&fit=crop", likes: 7 },
-  { imageUrl: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400&h=480&fit=crop", likes: 209 },
-  { imageUrl: "https://images.unsplash.com/photo-1578632292335-df3abbb0d586?w=400&h=520&fit=crop", likes: 55 },
-  { imageUrl: "https://images.unsplash.com/photo-1541562232579-512a21360020?w=400&h=600&fit=crop", likes: 223 },
-  { imageUrl: "https://images.unsplash.com/photo-1535223289827-42f1e9919769?w=400&h=450&fit=crop", likes: 48 },
-  { imageUrl: "https://images.unsplash.com/photo-1551085254-e96b210db58a?w=400&h=500&fit=crop", likes: 42 },
-  { imageUrl: "https://images.unsplash.com/photo-1616627988170-851c46d63560?w=400&h=480&fit=crop", likes: 8 },
-];
-
 const Gallery = () => {
-  return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        <Tabs defaultValue="newest" className="mb-6 flex justify-center">
-          <TabsList className="bg-transparent gap-6 p-0">
-            <TabsTrigger value="newest" className="text-base data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none bg-transparent px-0 pb-2">最新推荐</TabsTrigger>
-            <TabsTrigger value="weekly" className="text-base data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none bg-transparent px-0 pb-2">七日热门</TabsTrigger>
-          </TabsList>
-        </Tabs>
+  const [ranking, setRanking] = useState("newest");
+  const [category, setCategory] = useState("全部");
+  const [style, setStyle] = useState("全部");
+  const [technique, setTechnique] = useState("全部");
+  const [keyword, setKeyword] = useState("");
+  const [selected, setSelected] = useState<(typeof galleryItems)[number] | null>(null);
 
-        <div className="flex gap-8">
-          {/* Sidebar filters */}
-          <aside className="w-48 flex-shrink-0 hidden md:block">
-            <div className="bg-card rounded-lg p-4 border border-border">
-              <h3 className="font-semibold text-card-foreground mb-3">影片类别</h3>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {categories.map((c) => (
-                  <Badge key={c} variant={c === "全部" ? "default" : "outline"} className="cursor-pointer text-xs">{c}</Badge>
-                ))}
-              </div>
-              <h4 className="text-sm text-muted-foreground mb-2">风格</h4>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {styles.map((s) => (
-                  <Badge key={s} variant={s === "全部" ? "default" : "outline"} className="cursor-pointer text-xs">{s}</Badge>
-                ))}
-              </div>
-              <h4 className="text-sm text-muted-foreground mb-2">制作方式</h4>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {techniques.map((t) => (
-                  <Badge key={t} variant={t === "全部" ? "default" : "outline"} className="cursor-pointer text-xs">{t}</Badge>
-                ))}
-              </div>
-              <h4 className="text-sm text-muted-foreground mb-2">属性</h4>
-              <div className="flex flex-wrap gap-2">
-                {["全部", "男性", "女性"].map((g) => (
-                  <Badge key={g} variant={g === "全部" ? "default" : "outline"} className="cursor-pointer text-xs">{g}</Badge>
-                ))}
-              </div>
-            </div>
-          </aside>
+  const visibleItems = useMemo(() => {
+    return galleryItems
+      .filter((item) => category === "全部" || item.category === category)
+      .filter((item) => style === "全部" || item.style === style)
+      .filter((item) => technique === "全部" || item.technique === technique)
+      .filter((item) => !keyword.trim() || `${item.title} ${item.author}`.toLowerCase().includes(keyword.trim().toLowerCase()))
+      .sort((a, b) => ranking === "weekly" ? b.likes - a.likes : a.id.localeCompare(b.id));
+  }, [category, keyword, ranking, style, technique]);
 
-          {/* Masonry grid */}
-          <div className="flex-1 columns-2 lg:columns-3 xl:columns-4 gap-4 space-y-4">
-            {mockArtworks.map((art, i) => (
-              <div key={i} className="break-inside-avoid">
-                <GalleryCard {...art} />
-              </div>
-            ))}
-          </div>
+  function resetFilters() {
+    setCategory("全部");
+    setStyle("全部");
+    setTechnique("全部");
+    setKeyword("");
+  }
+
+  function FilterGroup({ title, value, items, onChange }: { title: string; value: string; items: string[]; onChange: (value: string) => void }) {
+    return (
+      <div>
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h4>
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <FilterChip key={item} active={value === item} onClick={() => onChange(item)}>
+              {item}
+            </FilterChip>
+          ))}
         </div>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <PageShell>
+      <Navbar />
+      <PageHero
+        eyebrow="Film Gallery"
+        title="用作品判断风格，而不是只看介绍"
+        description="影片灵感库聚合不同类别、风格和制作方式，适合用来找参考、看趋势，也可以快速定位创作者方向。"
+        stats={[
+          { label: "精选作品", value: galleryItems.length },
+          { label: "当前结果", value: visibleItems.length },
+          { label: "累计喜欢", value: galleryItems.reduce((sum, item) => sum + item.likes, 0) },
+        ]}
+      />
+
+      <main className="mx-auto max-w-6xl px-4 py-8">
+        <div className="mb-6 rounded-2xl border border-border bg-card/95 p-4 shadow-sm">
+          <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <Tabs value={ranking} onValueChange={setRanking}>
+              <TabsList className="rounded-full bg-muted p-1">
+                <TabsTrigger value="newest" className="rounded-full">最新推荐</TabsTrigger>
+                <TabsTrigger value="weekly" className="rounded-full">七日热门</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <div className="relative md:w-80">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input className="h-11 rounded-full pl-9" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索作品或作者" />
+            </div>
+          </div>
+          <div className="grid gap-5">
+            <FilterGroup title="影片类别" value={category} items={categories} onChange={setCategory} />
+            <FilterGroup title="视觉风格" value={style} items={styles} onChange={setStyle} />
+            <FilterGroup title="制作方式" value={technique} items={techniques} onChange={setTechnique} />
+          </div>
+        </div>
+
+        {visibleItems.length === 0 ? (
+          <SearchEmptyState onReset={resetFilters} />
+        ) : (
+          <div className="columns-1 gap-5 space-y-5 sm:columns-2 lg:columns-3">
+            {visibleItems.map((art) => (
+              <button key={art.id} type="button" className="group block w-full break-inside-avoid cursor-pointer text-left" onClick={() => setSelected(art)}>
+                <GalleryCard imageUrl={art.imageUrl} likes={art.likes} title={art.title} />
+                <div className="mt-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-200 group-hover:border-primary/30 group-hover:shadow-md">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-foreground">{art.title}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{art.author}</p>
+                    </div>
+                    <Aperture className="h-5 w-5 flex-shrink-0 text-primary" />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge variant="outline">{art.category}</Badge>
+                    <Badge variant="outline">{art.style}</Badge>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </main>
+
+      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
+        <DialogContent className="max-w-4xl p-0">
+          {selected && (
+            <div className="grid overflow-hidden rounded-2xl md:grid-cols-[1.25fr_0.75fr]">
+              <img src={selected.imageUrl} alt={selected.title} className="h-full min-h-96 w-full object-cover" />
+              <div className="flex flex-col p-6">
+                <DialogHeader>
+                  <DialogTitle>{selected.title}</DialogTitle>
+                </DialogHeader>
+                <p className="mt-2 text-sm text-muted-foreground">作者：{selected.author}</p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {[selected.category, selected.style, selected.technique].map((item) => <Badge key={item} variant="outline">{item}</Badge>)}
+                </div>
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-muted p-3">
+                    <Heart className="mb-2 h-4 w-4 text-price" />
+                    <p className="text-lg font-bold text-foreground">{selected.likes}</p>
+                    <p className="text-xs text-muted-foreground">喜欢</p>
+                  </div>
+                  <div className="rounded-xl bg-muted p-3">
+                    <Film className="mb-2 h-4 w-4 text-primary" />
+                    <p className="text-lg font-bold text-foreground">可参考</p>
+                    <p className="text-xs text-muted-foreground">项目风格</p>
+                  </div>
+                </div>
+                <Button className="mt-6 rounded-full" onClick={() => setSelected(null)}>
+                  <X className="mr-2 h-4 w-4" />关闭
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </PageShell>
   );
 };
 

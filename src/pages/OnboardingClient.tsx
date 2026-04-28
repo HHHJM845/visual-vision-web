@@ -7,10 +7,12 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { updateVerificationStatus } from "@/services/userService";
 import { ClientVerificationType } from "@/types/user";
+import { useToast } from "@/hooks/use-toast";
 
 export default function OnboardingClient() {
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
+  const { toast } = useToast();
   const [verType, setVerType] = useState<ClientVerificationType>('realname');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -23,17 +25,29 @@ export default function OnboardingClient() {
   async function handleRealname(data: { realname: string; idCard: string; code: string }) {
     if (!/^\d{6}$/.test(data.code)) { setError("请输入6位验证码"); return; }
     setSubmitting(true);
-    const updated = await updateVerificationStatus(user!.id, 'verified', 'realname');
-    setUser(updated);
-    navigate('/dashboard/client');
+    try {
+      const updated = await updateVerificationStatus(user!.id, 'verified', 'realname');
+      setUser(updated);
+      toast({ title: "认证通过", description: "现在可以发布项目并管理应征了。" });
+      navigate('/dashboard/client');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "认证失败，请稍后重试");
+      setSubmitting(false);
+    }
   }
 
   async function handleEnterprise(data: { companyName: string; creditCode: string; contact: string; phone: string }) {
     if (!/^[0-9A-Z]{18}$/.test(data.creditCode)) { setError("请输入有效的18位统一社会信用代码"); return; }
     setSubmitting(true);
-    const updated = await updateVerificationStatus(user!.id, 'verified', 'enterprise');
-    setUser(updated);
-    navigate('/dashboard/client');
+    try {
+      const updated = await updateVerificationStatus(user!.id, 'verified', 'enterprise');
+      setUser(updated);
+      toast({ title: "企业认证通过", description: "你的项目会展示企业认证标签。" });
+      navigate('/dashboard/client');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "认证失败，请稍后重试");
+      setSubmitting(false);
+    }
   }
 
   return (

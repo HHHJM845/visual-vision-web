@@ -4,6 +4,7 @@ import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { EmptyState, ErrorState, PageLoading, PermissionState } from "@/components/StateViews";
 import { useAuth } from "@/contexts/AuthContext";
 import { getCommissionsByAuthor } from "@/services/commissionService";
 import { Commission } from "@/types/commission";
@@ -20,13 +21,18 @@ export default function DashboardClient() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  if (!user) { navigate('/login'); return null; }
-  if (user.role !== 'client') { navigate('/dashboard/aigcer'); return null; }
-
-  const { data: commissions = [], isLoading } = useQuery({
-    queryKey: ['commissions', 'author', user.id],
-    queryFn: () => getCommissionsByAuthor(user.id),
+  const { data: commissions = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ['commissions', 'author', user?.id ?? 'guest'],
+    queryFn: () => getCommissionsByAuthor(user!.id),
+    enabled: !!user && user.role === 'client',
   });
+
+  if (!user) {
+    return <div className="min-h-screen bg-muted"><Navbar /><PermissionState title="请先登录" description="登录后可以查看你的项目工作台。" actionLabel="去登录" onAction={() => navigate('/login')} /></div>;
+  }
+  if (user.role !== 'client') {
+    return <div className="min-h-screen bg-muted"><Navbar /><PermissionState title="当前账号不是需求方" description="AIGCer 请前往创作者工作台查看应征项目。" actionLabel="进入创作者工作台" onAction={() => navigate('/dashboard/aigcer')} /></div>;
+  }
 
   const stats = {
     total: commissions.length,
@@ -37,6 +43,45 @@ export default function DashboardClient() {
 
   const tagLabel = user.clientVerificationType === 'enterprise' ? '企业认证' :
     user.verificationStatus === 'verified' ? '实名认证' : '未认证';
+
+  const visibleByTab: Record<string, Commission[]> = {
+    all: commissions,
+    recruiting: commissions.filter(c => new Date(c.deadline) >= new Date() && c.applicants === 0),
+    ongoing: commissions.filter(c => new Date(c.deadline) >= new Date() && c.applicants > 0),
+    done: commissions.filter(c => new Date(c.deadline) < new Date()),
+  };
+
+  function renderList(items: Commission[], emptyTitle: string) {
+    if (isLoading) return <PageLoading label="正在加载项目..." />;
+    if (isError) return <ErrorState onAction={() => refetch()} />;
+    if (items.length === 0) {
+      return (
+        <EmptyState
+          title={emptyTitle}
+          description="发布项目后，招募、沟通和验收状态都会在这里同步。"
+          actionLabel={user.verificationStatus === 'verified' ? "发布新项目" : undefined}
+          onAction={user.verificationStatus === 'verified' ? () => navigate('/commissions/new') : undefined}
+        />
+      );
+    }
+    return (
+      <div className="space-y-3">
+        {items.map(c => {
+          const s = statusLabel(c);
+          return (
+            <div key={c.id} onClick={() => navigate(`/commissions/${c.id}`)}
+              className="flex cursor-pointer items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:bg-muted">
+              <div className="flex-1">
+                <p className="font-medium text-foreground">{c.title}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{c.priceRange} · 截止 {c.deadline} · 应征 {c.applicants} 人</p>
+              </div>
+              <span className={`rounded-full px-2 py-1 text-xs font-medium ${s.class}`}>{s.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-muted">
@@ -88,41 +133,16 @@ export default function DashboardClient() {
             </TabsList>
 
             <TabsContent value="all">
-              {isLoading ? (
-                <p className="text-center text-muted-foreground py-8">加载中...</p>
-              ) : commissions.length === 0 ? (
-                <div className="text-center py-12">
-                  <p className="text-muted-foreground mb-4">还没有发布过项目</p>
-                  {user.verificationStatus === 'verified' && (
-                    <Button className="rounded-full" onClick={() => navigate('/commissions/new')}>立即发布第一个项目</Button>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {commissions.map(c => {
-                    const s = statusLabel(c);
-                    return (
-                      <div key={c.id} onClick={() => navigate(`/commissions/${c.id}`)}
-                        className="flex items-center gap-4 p-4 rounded-lg border border-border hover:bg-muted cursor-pointer transition-colors">
-                        <div className="flex-1">
-                          <p className="font-medium text-foreground">{c.title}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{c.priceRange} · 截止 {c.deadline} · 应征 {c.applicants} 人</p>
-                        </div>
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.class}`}>{s.label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              {renderList(visibleByTab.all, "还没有发布过项目")}
             </TabsContent>
             <TabsContent value="recruiting">
-              <p className="text-center text-muted-foreground py-8 text-sm">招募中项目将在此显示</p>
+              {renderList(visibleByTab.recruiting, "暂无招募中的项目")}
             </TabsContent>
             <TabsContent value="ongoing">
-              <p className="text-center text-muted-foreground py-8 text-sm">进行中项目将在此显示</p>
+              {renderList(visibleByTab.ongoing, "暂无进行中的项目")}
             </TabsContent>
             <TabsContent value="done">
-              <p className="text-center text-muted-foreground py-8 text-sm">已完成项目将在此显示</p>
+              {renderList(visibleByTab.done, "暂无已结束项目")}
             </TabsContent>
           </Tabs>
         </div>

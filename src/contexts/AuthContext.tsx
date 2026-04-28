@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User } from '@/types/user';
+import { getCurrentUser, logout as logoutService } from '@/services/authService';
 
 interface AuthContextValue {
   user: User | null;
@@ -11,14 +12,43 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUserState] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  function setUser(user: User | null) {
+    setUserState(user);
+    if (typeof window !== 'undefined') {
+      if (user) window.localStorage.setItem('visionai.currentUser', JSON.stringify(user));
+      else window.localStorage.removeItem('visionai.currentUser');
+    }
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadUser() {
+      const stored = window.localStorage.getItem('visionai.currentUser');
+      if (stored) {
+        try {
+          setUserState(JSON.parse(stored) as User);
+        } catch {
+          window.localStorage.removeItem('visionai.currentUser');
+        }
+      }
+      const remoteUser = await getCurrentUser().catch(() => null);
+      if (mounted && remoteUser) setUser(remoteUser);
+      if (mounted) setIsLoading(false);
+    }
+    loadUser();
+    return () => { mounted = false; };
+  }, []);
 
   async function logout() {
+    await logoutService().catch(() => undefined);
     setUser(null);
   }
 
   return (
-    <AuthContext.Provider value={{ user, setUser, logout, isLoading: false }}>
+    <AuthContext.Provider value={{ user, setUser, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

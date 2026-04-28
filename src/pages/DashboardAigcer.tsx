@@ -4,6 +4,7 @@ import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import { EmptyState, ErrorState, PageLoading, PermissionState } from "@/components/StateViews";
 import { useAuth } from "@/contexts/AuthContext";
 import { getApplicationsByAigcer, getCommissionById } from "@/services/commissionService";
 import { Application } from "@/types/commission";
@@ -17,13 +18,18 @@ export default function DashboardAigcer() {
   const { user } = useAuth();
   const [appDetails, setAppDetails] = useState<AppWithCommission[]>([]);
 
-  if (!user) { navigate('/login'); return null; }
-  if (user.role !== 'aigcer') { navigate('/dashboard/client'); return null; }
-
-  const { data: applications = [] } = useQuery({
-    queryKey: ['applications', 'aigcer', user.id],
-    queryFn: () => getApplicationsByAigcer(user.id),
+  const { data: applications = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ['applications', 'aigcer', user?.id ?? 'guest'],
+    queryFn: () => getApplicationsByAigcer(user!.id),
+    enabled: !!user && user.role === 'aigcer',
   });
+
+  if (!user) {
+    return <div className="min-h-screen bg-muted"><Navbar /><PermissionState title="请先登录" description="登录后可以查看你的创作者工作台。" actionLabel="去登录" onAction={() => navigate('/login')} /></div>;
+  }
+  if (user.role !== 'aigcer') {
+    return <div className="min-h-screen bg-muted"><Navbar /><PermissionState title="当前账号不是AIGCer" description="需求方请前往需求方工作台管理项目。" actionLabel="进入需求方工作台" onAction={() => navigate('/dashboard/client')} /></div>;
+  }
 
   useEffect(() => {
     async function load() {
@@ -91,11 +97,12 @@ export default function DashboardAigcer() {
             </TabsList>
 
             <TabsContent value="projects">
-              {appDetails.length === 0 ? (
-                <div className="text-center py-12">
-                  <p className="text-muted-foreground mb-4">还没有应征过项目</p>
-                  <Button className="rounded-full" onClick={() => navigate('/commissions')}>去找项目</Button>
-                </div>
+              {isLoading ? (
+                <PageLoading label="正在加载应征项目..." />
+              ) : isError ? (
+                <ErrorState onAction={() => refetch()} />
+              ) : appDetails.length === 0 ? (
+                <EmptyState title="还没有应征过项目" description="去项目广场寻找合适需求，应征后状态会同步到这里。" actionLabel="去找项目" onAction={() => navigate('/commissions')} />
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {appDetails.map(({ app, commission }) => (
@@ -134,11 +141,12 @@ export default function DashboardAigcer() {
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-muted-foreground py-8 text-sm">
-                  {user.verificationStatus === 'none' ? (
-                    <Button className="rounded-full" onClick={() => navigate('/onboarding/aigcer')}>完成认证上传作品集</Button>
-                  ) : '暂无作品'}
-                </p>
+                <EmptyState
+                  title={user.verificationStatus === 'none' ? "还没有完成作品集认证" : "暂无作品"}
+                  description="作品集会帮助需求方判断你的风格匹配度。"
+                  actionLabel={user.verificationStatus === 'none' ? "完成认证上传作品集" : undefined}
+                  onAction={user.verificationStatus === 'none' ? () => navigate('/onboarding/aigcer') : undefined}
+                />
               )}
             </TabsContent>
           </Tabs>

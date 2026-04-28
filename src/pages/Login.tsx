@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
-
-const FIXED_EMAIL = "823760642@qq.com";
-const FIXED_PASSWORD = "321123";
+import { login as loginUser } from "@/services/authService";
+import { useToast } from "@/hooks/use-toast";
 
 const schema = z.object({
   account: z.string().min(1, "请输入邮箱"),
@@ -20,6 +19,7 @@ type FormValues = z.infer<typeof schema>;
 export default function Login() {
   const navigate = useNavigate();
   const { setUser } = useAuth();
+  const { toast } = useToast();
   const [error, setError] = useState("");
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormValues>({
@@ -28,19 +28,13 @@ export default function Login() {
 
   async function onSubmit(data: FormValues) {
     setError("");
-    if (data.account === FIXED_EMAIL && data.password === FIXED_PASSWORD) {
-      setUser({
-        id: 'admin-001',
-        email: FIXED_EMAIL,
-        phone: '',
-        nickname: '管理员',
-        role: 'client',
-        verificationStatus: 'verified',
-        clientVerificationType: 'realname',
-      });
-      navigate('/dashboard/client');
-    } else {
-      setError("账号或密码错误");
+    try {
+      const user = await loginUser({ account: data.account, password: data.password });
+      setUser(user);
+      toast({ title: "登录成功", description: "已进入你的工作台。" });
+      navigate(user.role === 'client' ? '/dashboard/client' : '/dashboard/aigcer');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "登录失败，请稍后重试");
     }
   }
 
@@ -74,6 +68,12 @@ export default function Login() {
             {isSubmitting ? "登录中..." : "登录"}
           </Button>
         </form>
+
+        <div className="mt-5 rounded-lg bg-accent/50 p-3 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">体验账号</p>
+          <p>需求方：823760642@qq.com / 321123</p>
+          <p>AIGCer：aigcer@visionai.demo / 321123</p>
+        </div>
 
         <p className="text-center text-sm text-muted-foreground mt-6">
           还没有账号？{" "}

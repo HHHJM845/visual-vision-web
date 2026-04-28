@@ -1,163 +1,157 @@
+import { useMemo, useState } from "react";
+import { ArrowUpRight, BadgeCheck, Clock3, Film, MessageSquare, ShoppingBag, Sparkles } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import { FilterChip, PageHero, PageShell, SectionTitle } from "@/components/PageChrome";
+import { SearchEmptyState } from "@/components/StateViews";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { showcaseItems } from "@/data/mockData";
 
-const categories = [
-  { label: "全部类型", count: 999 },
-  { label: "宣传片", count: 892 },
-  { label: "短视频", count: 561 },
-  { label: "概念影像", count: 311 },
-  { label: "动态海报", count: 402 },
-  { label: "创意短片", count: 178 },
-  { label: "真人合成", count: 350 },
-  { label: "AI动画", count: 165 },
-  { label: "数字人", count: 381 },
-  { label: "特效合成", count: 186 },
-];
+const categories = ["全部类型", "宣传片", "短视频", "概念影像", "数字人"];
 
-const fastDelivery = [
-  { title: "【企业】品牌AI宣传片or纪录片...", tag: "24H", sold: 8, price: 180, author: "云雾视觉机", avatar: "🎬" },
-  { title: "火速半分钟短视频", tag: "24H", sold: 7, price: 168, author: "像野骑好好玩", avatar: "⚡" },
-  { title: "【24h】打包两条宣传头", tag: "24H", sold: 139, price: 99, author: "鹰野鹳九", avatar: "🦅" },
-  { title: "24H关键片段 AI合成", tag: "24H", sold: 6, price: 222, author: "水润面包", avatar: "💧" },
-  { title: "cc的一片活", tag: "24H", sold: 224, price: 59, author: "从心所通", avatar: "✨" },
-];
+const iconMap = [Film, Sparkles, Clock3, BadgeCheck, MessageSquare];
 
-const recommended = [
-  { title: "<4月限期>单人证件影像", tag: null, sold: 78, price: 168, author: "执期视角", avatar: "🎥" },
-  { title: "特价赠品小零食短片", tag: null, sold: 37, price: 66, author: "鱼鱼", avatar: "🐟" },
-  { title: "【24h】打包两条宣传片", tag: "24H", sold: 139, price: 99, author: "鹰野鹳九", avatar: "🦅" },
-  { title: "【特价】水墨风AI影像", tag: "特价", sold: 92, price: 126, author: "久生1111", avatar: "🖌️" },
-  { title: "概念影像定制", tag: null, sold: 44, price: 52, author: "他里啦啦噜666", avatar: "🌌" },
-];
-
-const newest = [
-  { title: "大头·AI个人形象短片", tag: null, sold: null, price: 85, author: "teano", avatar: "👤" },
-  { title: "【试投】一套数字人止太头", tag: "试投", sold: null, price: 136, author: "シ ョタ欲しい", avatar: "🤖" },
-  { title: "【48H】证件影·收入", tag: "48H", sold: 23, price: 125, author: "松松松松力", avatar: "📋" },
-  { title: "一键换装AI影像", tag: null, sold: 1, price: 189, author: "物兔楚楚", avatar: "👗" },
-  { title: "全身AI写实渲染", tag: null, sold: 14, price: 120, author: "meemor", avatar: "🎭" },
-];
-
-const upcoming = [
-  { title: "AI概念影像·机甲", tag: "24H", sold: null, price: null, author: "铁甲战神", avatar: "🤖" },
-  { title: "动态光效特效短片", tag: "24H", sold: null, price: null, author: "光影师", avatar: "💡" },
-  { title: "虚拟偶像宣传MV", tag: null, sold: null, price: null, author: "星际创作", avatar: "⭐" },
-  { title: "AI写实人物短片", tag: null, sold: null, price: null, author: "真实影像", avatar: "📸" },
-];
-
-const ShowcaseCard = ({ item }: { item: typeof fastDelivery[0] }) => (
-  <div className="bg-card rounded-lg overflow-hidden border border-border hover:shadow-md transition-shadow cursor-pointer">
-    <div className="relative aspect-[4/3] bg-accent flex items-center justify-center text-4xl">
-      {item.avatar}
-      {item.tag && (
-        <span className="absolute top-2 left-2 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded font-medium">
-          {item.tag}
-        </span>
-      )}
-      {item.sold != null && (
-        <span className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
-          已售 {item.sold}
-        </span>
-      )}
-    </div>
-    <div className="p-3">
-      <p className="text-sm font-medium text-card-foreground truncate mb-2">{item.title}</p>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <span className="w-5 h-5 rounded-full bg-accent flex items-center justify-center text-xs">{item.avatar}</span>
-          {item.author}
+const ShowcaseCard = ({ item, index, onOpen }: { item: typeof showcaseItems[number]; index: number; onOpen: () => void }) => {
+  const Icon = iconMap[index % iconMap.length];
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group grid min-h-64 cursor-pointer overflow-hidden rounded-2xl border border-border bg-card text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-xl"
+    >
+      <div className="relative flex aspect-[4/3] items-center justify-center bg-[radial-gradient(circle_at_30%_25%,hsl(var(--primary)/0.18),transparent_16rem),hsl(var(--accent))]">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-background/90 text-primary shadow-sm">
+          <Icon className="h-8 w-8" />
         </div>
-        <span className="text-base font-bold text-price">¥{item.price}</span>
+        {item.tag && <span className="absolute left-3 top-3 rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground">{item.tag}</span>}
+        {item.sold != null && <span className="absolute bottom-3 right-3 rounded-full bg-foreground px-2.5 py-1 text-xs text-background">已售 {item.sold}</span>}
       </div>
-    </div>
-  </div>
-);
-
-const SectionHeader = ({ title }: { title: string }) => (
-  <div className="flex items-center justify-between mb-4">
-    <h2 className="text-lg font-bold text-foreground">{title}</h2>
-    <button className="text-sm text-primary hover:underline">查看更多 &gt;</button>
-  </div>
-);
+      <div className="p-4">
+        <div className="mb-2 flex items-start justify-between gap-3">
+          <p className="line-clamp-2 text-sm font-semibold text-card-foreground">{item.title}</p>
+          <ArrowUpRight className="h-4 w-4 flex-shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+        </div>
+        <p className="mb-4 text-xs text-muted-foreground">{item.author} · {item.delivery}</p>
+        <div className="flex items-center justify-between border-t border-border pt-3">
+          <span className="text-xs text-muted-foreground">起价</span>
+          <span className="text-lg font-bold text-price">¥{item.price}</span>
+        </div>
+      </div>
+    </button>
+  );
+};
 
 const Showcase = () => {
+  const { toast } = useToast();
+  const [category, setCategory] = useState("全部类型");
+  const [selected, setSelected] = useState<typeof showcaseItems[number] | null>(null);
+  const visible = useMemo(() => showcaseItems.filter((item) => category === "全部类型" || item.category === category), [category]);
+  const fastDelivery = visible.filter((item) => item.tag === "24H" || item.tag === "48H");
+  const recommended = visible.filter((item) => item.tag !== "24H" && item.tag !== "48H");
+
+  function handleReserve() {
+    toast({ title: "已加入沟通意向", description: "正式下单前会先进入需求确认与报价沟通。" });
+    setSelected(null);
+  }
+
   return (
-    <div className="min-h-screen bg-background">
+    <PageShell>
       <Navbar />
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        {/* Category tabs */}
-        <div className="flex flex-wrap gap-2 mb-8 pb-4 border-b border-border">
-          {categories.map((cat, i) => (
-            <button
-              key={cat.label}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-sm transition-colors ${
-                i === 0
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-accent text-foreground hover:bg-primary/10"
-              }`}
-            >
-              {cat.label}
-              <span className={`text-xs ${i === 0 ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                {cat.count}
-              </span>
-            </button>
-          ))}
+      <PageHero
+        eyebrow="Creator Showcase"
+        title="从成熟服务里快速选择承制方"
+        description="橱窗聚合可直接沟通的标准化服务，适合预算明确、周期紧凑或想快速找到风格样本的需求。"
+        stats={[
+          { label: "橱窗服务", value: showcaseItems.length },
+          { label: "快速交付", value: fastDelivery.length },
+          { label: "平均起价", value: "¥238" },
+        ]}
+      />
+
+      <main className="mx-auto max-w-6xl px-4 py-8">
+        <div className="mb-8 flex flex-wrap gap-2">
+          {categories.map((cat) => {
+            const count = cat === "全部类型" ? showcaseItems.length : showcaseItems.filter((item) => item.category === cat).length;
+            return (
+              <FilterChip key={cat} active={category === cat} onClick={() => setCategory(cat)}>
+                {cat}<span className="text-xs opacity-75">{count}</span>
+              </FilterChip>
+            );
+          })}
         </div>
 
-        {/* 快速交付 */}
-        <section className="mb-10">
-          <SectionHeader title="快速交付" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-            {fastDelivery.map((item, i) => (
-              <ShowcaseCard key={i} item={item} />
-            ))}
-          </div>
-        </section>
-
-        {/* 好推荐 */}
-        <section className="mb-10">
-          <SectionHeader title="好推荐" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-            {recommended.map((item, i) => (
-              <ShowcaseCard key={i} item={item} />
-            ))}
-          </div>
-        </section>
-
-        {/* 最新上架 */}
-        <section className="mb-10">
-          <SectionHeader title="最新上架" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-            {newest.map((item, i) => (
-              <ShowcaseCard key={i} item={item} />
-            ))}
-          </div>
-        </section>
-
-        {/* 即将上架 */}
-        <section className="mb-10">
-          <SectionHeader title="即将上架" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {upcoming.map((item, i) => (
-              <div key={i} className="bg-card rounded-lg overflow-hidden border border-border border-dashed opacity-70">
-                <div className="aspect-[4/3] bg-accent/50 flex items-center justify-center text-4xl">
-                  {item.avatar}
-                  {item.tag && (
-                    <span className="absolute top-2 left-2 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded font-medium">
-                      {item.tag}
-                    </span>
-                  )}
+        {visible.length === 0 ? (
+          <SearchEmptyState onReset={() => setCategory("全部类型")} />
+        ) : (
+          <>
+            <section className="mb-12">
+              <SectionTitle title="快速交付" description="适合短周期发布、活动预热和社媒素材。" />
+              {fastDelivery.length ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {fastDelivery.map((item, index) => <ShowcaseCard key={item.id} item={item} index={index} onOpen={() => setSelected(item)} />)}
                 </div>
-                <div className="p-3">
-                  <p className="text-sm font-medium text-card-foreground truncate mb-1">{item.title}</p>
-                  <p className="text-xs text-muted-foreground">{item.author}</p>
-                </div>
+              ) : (
+                <SearchEmptyState onReset={() => setCategory("全部类型")} />
+              )}
+            </section>
+
+            <section className="mb-12">
+              <SectionTitle title="好推荐" description="结合售出记录、交付方式和风格覆盖挑选。" />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {recommended.map((item, index) => <ShowcaseCard key={item.id} item={item} index={index + 2} onOpen={() => setSelected(item)} />)}
               </div>
-            ))}
-          </div>
-        </section>
-      </div>
-    </div>
+            </section>
+
+            <section>
+              <SectionTitle title="即将上架" description="预留需求方向，后续可直接转为服务包。" />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {["机甲概念影像", "动态光效特效短片", "虚拟偶像宣传MV", "AI写实人物短片"].map((title, index) => {
+                  const Icon = iconMap[(index + 1) % iconMap.length];
+                  return (
+                    <div key={title} className="rounded-2xl border border-dashed border-border bg-card/70 p-5">
+                      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-primary">
+                        <Icon className="h-6 w-6" />
+                      </div>
+                      <p className="font-semibold text-card-foreground">{title}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">开放预约中</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        )}
+      </main>
+
+      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
+        <DialogContent>
+          {selected && (
+            <>
+              <DialogHeader><DialogTitle>{selected.title}</DialogTitle></DialogHeader>
+              <div className="rounded-2xl border border-border bg-accent/60 p-6">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-background text-primary shadow-sm">
+                  <Film className="h-7 w-7" />
+                </div>
+                <p className="text-sm text-muted-foreground">由 {selected.author} 提供，{selected.delivery}。</p>
+              </div>
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                <div><span className="text-muted-foreground">创作者：</span>{selected.author}</div>
+                <div><span className="text-muted-foreground">交付：</span>{selected.delivery}</div>
+                <div><span className="text-muted-foreground">类型：</span>{selected.category}</div>
+                <div><span className="text-muted-foreground">起价：</span><span className="font-bold text-price">¥{selected.price}</span></div>
+              </div>
+              <div className="flex flex-wrap gap-2">{selected.tag && <Badge>{selected.tag}</Badge>}<Badge variant="outline">售后沟通</Badge><Badge variant="outline">节点验收</Badge></div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setSelected(null)}>再看看</Button>
+                <Button onClick={handleReserve}><ShoppingBag className="mr-2 h-4 w-4" />发起沟通</Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </PageShell>
   );
 };
 

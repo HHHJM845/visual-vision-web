@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { register as registerUser } from "@/services/authService";
 import { UserRole } from "@/types/user";
+import { useToast } from "@/hooks/use-toast";
 
 const schema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
@@ -20,6 +21,7 @@ type FormValues = z.infer<typeof schema>;
 export default function Register() {
   const navigate = useNavigate();
   const { setUser } = useAuth();
+  const { toast } = useToast();
   const [searchParams] = useSearchParams();
   const initialRole = searchParams.get('role') === 'client' ? 'client' : 'aigcer';
   const [role, setRole] = useState<UserRole>(initialRole);
@@ -39,6 +41,7 @@ export default function Register() {
         role,
       });
       setUser(user);
+      toast({ title: "注册成功", description: "继续完成身份认证即可使用完整功能。" });
       navigate(role === 'client' ? '/onboarding/client' : '/onboarding/aigcer');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "注册失败");

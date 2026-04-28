@@ -1,157 +1,115 @@
+import { BarChart3, CheckCircle2, Download, Monitor, QrCode, ShieldCheck, Smartphone, Sparkles } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import { PageShell, SectionTitle } from "@/components/PageChrome";
 import { Button } from "@/components/ui/button";
-import { Smartphone, Monitor } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+const features = [
+  { title: "项目进度随时看", desc: "从应征、选定到节点验收，关键状态集中呈现。", icon: BarChart3 },
+  { title: "沟通与资料更清楚", desc: "需求、报价、参考图和交付物都围绕项目组织。", icon: Sparkles },
+  { title: "交易托管更安心", desc: "节点确认、保证金托管和交付记录保持可追溯。", icon: ShieldCheck },
+];
+
+const screenCards = [
+  { title: "项目广场", desc: "筛选预算、周期和风格", icon: Smartphone },
+  { title: "创作工作台", desc: "查看应征与交付节点", icon: BarChart3 },
+  { title: "橱窗服务", desc: "收藏常用承制服务", icon: CheckCircle2 },
+];
 
 const AppPage = () => {
+  const { toast } = useToast();
+  const handleDownload = (platform: string) => {
+    toast({ title: `${platform}下载已开始`, description: "当前为演示包，正式上线后会跳转到对应应用市场。" });
+  };
+
   return (
-    <div className="min-h-screen bg-background">
+    <PageShell>
       <Navbar />
-      <div className="max-w-6xl mx-auto px-4 py-16 flex flex-col md:flex-row items-center gap-16">
-        {/* Left: text content */}
-        <div className="flex-shrink-0 max-w-sm">
-          <h1 className="text-4xl font-bold text-foreground leading-tight mb-3">
-            AI影制APP
-            <br />
-            让承制事半功倍
-          </h1>
-          <p className="text-sm text-muted-foreground mb-8 leading-relaxed">
-            简单好用，轻松发布&nbsp;&nbsp;|&nbsp;&nbsp;AIGCer橱窗，随心挑选
-            <br />
-            即时沟通，安心可靠
-          </p>
+      <main className="mx-auto max-w-6xl px-4 py-10">
+        <section className="grid gap-10 rounded-3xl border border-border bg-card p-6 shadow-sm md:grid-cols-[0.95fr_1.05fr] md:p-10">
+          <div className="flex flex-col justify-center">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary">VisionAI App</p>
+            <h1 className="text-4xl font-bold leading-tight text-foreground md:text-6xl">
+              把承制流程装进一个更轻的工作台
+            </h1>
+            <p className="mt-5 max-w-lg text-sm leading-7 text-muted-foreground md:text-base">
+              面向需求方和 AIGCer 的协作入口：找项目、看作品、收消息、管节点，用更少切换完成更多协作。
+            </p>
 
-          {/* QR + buttons */}
-          <div className="flex items-center gap-4 mb-6">
-            {/* QR code placeholder */}
-            <div className="w-24 h-24 bg-foreground/5 border border-border rounded-lg flex items-center justify-center flex-shrink-0">
-              <div className="grid grid-cols-5 gap-0.5 p-1">
-                {Array.from({ length: 25 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`w-3 h-3 rounded-sm ${
-                      [0,1,2,3,4,5,9,10,14,15,19,20,21,22,23,24,7,17,6,11,12,13,18].includes(i)
-                        ? "bg-foreground"
-                        : "bg-background"
-                    }`}
-                  />
-                ))}
+            <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="flex h-28 w-28 items-center justify-center rounded-2xl border border-border bg-background shadow-sm">
+                <QrCode className="h-16 w-16 text-foreground" />
               </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Button className="w-28 bg-primary text-primary-foreground rounded-full">
-                安卓版
-              </Button>
-              <Button className="w-28 bg-primary text-primary-foreground rounded-full">
-                iOS 版
-              </Button>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Button className="rounded-full" onClick={() => handleDownload("iOS 版")}>
+                  <Download className="mr-2 h-4 w-4" /> iOS 版
+                </Button>
+                <Button className="rounded-full" onClick={() => handleDownload("安卓版")}>
+                  <Download className="mr-2 h-4 w-4" /> 安卓版
+                </Button>
+                <Button variant="outline" className="rounded-full sm:col-span-2" onClick={() => handleDownload("桌面版")}>
+                  <Monitor className="mr-2 h-4 w-4" /> 桌面版下载
+                </Button>
+              </div>
             </div>
           </div>
 
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors">
-            <Monitor className="w-4 h-4" />
-            桌面版下载
-          </button>
-        </div>
-
-        {/* Right: phone mockups */}
-        <div className="flex-1 relative h-[520px] hidden md:block">
-          {/* Main center phone */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-52 z-20">
-            <div className="bg-gray-900 rounded-[2.5rem] p-2 shadow-2xl border-4 border-gray-700">
-              <div className="bg-background rounded-[2rem] overflow-hidden">
-                {/* Notch */}
-                <div className="bg-gray-900 h-6 flex items-center justify-center">
-                  <div className="w-16 h-3 bg-gray-800 rounded-full" />
+          <div className="relative min-h-[520px] overflow-hidden rounded-3xl bg-[radial-gradient(circle_at_20%_10%,hsl(var(--primary)/0.20),transparent_18rem),hsl(var(--muted))] p-6">
+            <div className="absolute left-8 top-8 rounded-full bg-background/85 px-4 py-2 text-xs font-medium text-muted-foreground shadow-sm">
+              4.8 / 5 用户评分
+            </div>
+            <div className="mx-auto mt-16 w-64 rounded-[2rem] border-8 border-foreground bg-background p-3 shadow-2xl">
+              <div className="mb-4 h-5 rounded-full bg-foreground" />
+              <div className="space-y-3">
+                <div className="rounded-2xl bg-primary p-4 text-primary-foreground">
+                  <p className="text-xs opacity-80">今日待处理</p>
+                  <p className="mt-2 text-2xl font-bold">12</p>
                 </div>
-                {/* Screen content */}
-                <div className="bg-background p-2 h-80 overflow-hidden">
-                  <div className="bg-primary/10 rounded p-2 mb-2 text-xs text-primary font-medium">橱窗</div>
-                  <div className="space-y-2">
-                    {["快速交付", "好推荐", "最新上架"].map((section) => (
-                      <div key={section}>
-                        <div className="text-xs font-semibold text-foreground mb-1">{section}</div>
-                        <div className="grid grid-cols-3 gap-1">
-                          {[1, 2, 3].map((j) => (
-                            <div key={j} className="aspect-square bg-accent rounded text-center flex items-center justify-center text-lg">
-                              {["🎬", "⚡", "🎥", "✨", "🌌", "🤖", "💫", "🎨", "🦋"][Math.floor(Math.random() * 9)]}
-                            </div>
-                          ))}
-                        </div>
+                {screenCards.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.title} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-primary">
+                        <Icon className="h-5 w-5" />
                       </div>
-                    ))}
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                        <p className="text-xs text-muted-foreground">{item.desc}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="absolute bottom-8 right-8 rounded-2xl border border-border bg-background/90 p-4 shadow-lg backdrop-blur">
+              <p className="text-sm font-semibold text-foreground">节点验收</p>
+              <div className="mt-3 h-2 w-36 rounded-full bg-muted">
+                <div className="h-2 w-2/3 rounded-full bg-primary" />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">粗剪阶段 · 70%</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="py-12">
+          <SectionTitle title="更适合移动协作的三个细节" description="不是把网页塞进手机，而是让高频动作更靠前。" />
+          <div className="grid gap-4 md:grid-cols-3">
+            {features.map((feature) => {
+              const Icon = feature.icon;
+              return (
+                <div key={feature.title} className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+                  <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-primary">
+                    <Icon className="h-6 w-6" />
                   </div>
+                  <h3 className="font-semibold text-foreground">{feature.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{feature.desc}</p>
                 </div>
-              </div>
-            </div>
+              );
+            })}
           </div>
-
-          {/* Back left phone */}
-          <div className="absolute left-4 top-8 w-40 z-10 rotate-[-12deg] opacity-80">
-            <div className="bg-gray-800 rounded-[2rem] p-1.5 shadow-xl border-2 border-gray-600">
-              <div className="bg-background rounded-[1.5rem] overflow-hidden">
-                <div className="bg-gray-900 h-4 flex items-center justify-center">
-                  <div className="w-10 h-2 bg-gray-800 rounded-full" />
-                </div>
-                <div className="p-2 h-52">
-                  <div className="text-xs font-bold text-foreground mb-2">项目广场</div>
-                  {[1,2,3].map(i => (
-                    <div key={i} className="bg-accent/60 rounded p-1.5 mb-1.5 text-xs text-muted-foreground">
-                      AI影片需求 #{i}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Back right phone */}
-          <div className="absolute right-4 top-8 w-40 z-10 rotate-[12deg] opacity-80">
-            <div className="bg-gray-800 rounded-[2rem] p-1.5 shadow-xl border-2 border-gray-600">
-              <div className="bg-background rounded-[1.5rem] overflow-hidden">
-                <div className="bg-gray-900 h-4 flex items-center justify-center">
-                  <div className="w-10 h-2 bg-gray-800 rounded-full" />
-                </div>
-                <div className="p-2 h-52">
-                  <div className="text-xs font-bold text-foreground mb-2">工作台</div>
-                  {["概念稿 20%", "分镜 40%", "粗剪 70%"].map((stage) => (
-                    <div key={stage} className="mb-2">
-                      <div className="flex justify-between text-xs text-muted-foreground mb-0.5">
-                        <span>{stage.split(" ")[0]}</span>
-                        <span>{stage.split(" ")[1]}</span>
-                      </div>
-                      <div className="h-1.5 bg-accent rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary rounded-full"
-                          style={{ width: stage.split(" ")[1] }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Small floating card */}
-          <div className="absolute bottom-12 left-8 z-30 w-44 bg-card border border-border rounded-xl shadow-lg p-3">
-            <div className="text-xs font-semibold text-foreground mb-1">AI短片创作项目</div>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-              <span>🎬 虚拟主播·角色设计</span>
-            </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">¥99/件</span>
-              <button className="bg-primary text-primary-foreground px-2 py-0.5 rounded-full text-xs">应征</button>
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile fallback illustration */}
-        <div className="md:hidden flex flex-col items-center gap-4 text-muted-foreground">
-          <Smartphone className="w-24 h-24 text-primary/30" />
-          <p className="text-sm">扫描上方二维码下载App</p>
-        </div>
-      </div>
-    </div>
+        </section>
+      </main>
+    </PageShell>
   );
 };
 

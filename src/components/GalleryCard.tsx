@@ -3,14 +3,15 @@ import { Heart } from "lucide-react";
 interface GalleryCardProps {
   imageUrl: string;
   likes: number;
+  title?: string;
 }
 
-const GalleryCard = ({ imageUrl, likes }: GalleryCardProps) => {
+const GalleryCard = ({ imageUrl, likes, title = "artwork" }: GalleryCardProps) => {
   return (
     <div className="relative group rounded-lg overflow-hidden cursor-pointer">
       <img
         src={imageUrl}
-        alt="artwork"
+        alt={title}
         className="w-full h-auto object-cover transition-transform duration-300 group-hover:scale-105"
         loading="lazy"
       />

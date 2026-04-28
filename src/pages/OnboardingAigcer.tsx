@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { updateVerificationStatus, saveAigcerProfile } from "@/services/userService";
 import { AigcerProfile, PortfolioItem } from "@/types/user";
 import { supabase } from "@/lib/supabase";
+import { useToast } from "@/hooks/use-toast";
 
 const STYLE_OPTIONS = ["二次元", "国风古典", "欧美写实", "科幻未来", "写实渲染", "赛博朋克", "奇幻史诗"];
 const TOOL_OPTIONS = ["Midjourney", "Runway", "Kling", "Sora", "ComfyUI", "Stable Diffusion", "Pika"];
@@ -20,12 +21,14 @@ interface LocalPortfolioItem extends PortfolioItem {
 export default function OnboardingAigcer() {
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
+  const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [bio, setBio] = useState("");
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const [portfolio, setPortfolio] = useState<LocalPortfolioItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function toggleTag(list: string[], setList: (v: string[]) => void, tag: string) {
@@ -57,6 +60,7 @@ export default function OnboardingAigcer() {
   async function handleSubmit() {
     if (!user) return;
     setSubmitting(true);
+    setError("");
     try {
       // Upload portfolio images to Supabase Storage
       const uploadedPortfolio: PortfolioItem[] = await Promise.all(
@@ -86,10 +90,12 @@ export default function OnboardingAigcer() {
       setTimeout(async () => {
         const verifiedUser = await updateVerificationStatus(user.id, 'verified');
         setUser(verifiedUser);
+        toast({ title: "认证通过", description: "作品集已同步到创作者工作台。" });
         navigate('/dashboard/aigcer');
       }, 3000);
     } catch (e) {
       console.error(e);
+      setError(e instanceof Error ? e.message : "提交审核失败，请稍后重试");
       setSubmitting(false);
     }
   }
@@ -185,6 +191,7 @@ export default function OnboardingAigcer() {
                   <p className="text-sm font-medium text-primary">审核中，预计 3 秒后通过...</p>
                 </div>
               )}
+              {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
 
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1 rounded-full" onClick={() => setStep(1)}>上一步</Button>

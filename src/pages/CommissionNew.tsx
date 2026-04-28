@@ -1,15 +1,19 @@
+import { useState } from 'react';
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { Loader2 } from 'lucide-react';
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useAuth } from "@/contexts/AuthContext";
 import { createCommission } from "@/services/commissionService";
+import { useAIBrief } from '@/hooks/useAIBrief';
 
 const schema = z.object({
   title: z.string().min(5, "标题至少5个字"),
@@ -38,6 +42,29 @@ export default function CommissionNew() {
     resolver: zodResolver(schema),
     defaultValues: { purpose: "商业用途" },
   });
+
+  const { isLoading: aiLoading, result: aiResult, error: aiError, generate, reset } = useAIBrief();
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [roughIdea, setRoughIdea] = useState('');
+
+  async function handleGenerate() {
+    await generate(roughIdea);
+  }
+
+  function handleUseBrief() {
+    if (aiResult) {
+      setValue('description', aiResult);
+      setBriefOpen(false);
+      reset();
+      setRoughIdea('');
+    }
+  }
+
+  function handleOpenBrief() {
+    reset();
+    setRoughIdea('');
+    setBriefOpen(true);
+  }
 
   async function onSubmit(data: FormValues) {
     const tag = user!.clientVerificationType === 'enterprise' ? '企业认证' as const : '实名认证' as const;
@@ -78,8 +105,17 @@ export default function CommissionNew() {
             </div>
 
             <div>
-              <Label>需求描述</Label>
-              <Textarea className="mt-1" rows={4} placeholder="详细描述影片风格、时长、用途、参考案例等..." {...register("description")} />
+              <div className="flex items-center justify-between mb-1">
+                <Label>需求描述</Label>
+                <button
+                  type="button"
+                  onClick={handleOpenBrief}
+                  className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                >
+                  ✨ AI 优化
+                </button>
+              </div>
+              <Textarea rows={4} placeholder="详细描述影片风格、时长、用途、参考案例等..." {...register("description")} />
               {errors.description && <p className="text-destructive text-xs mt-1">{errors.description.message}</p>}
             </div>
 
@@ -141,6 +177,52 @@ export default function CommissionNew() {
           </div>
         </form>
       </div>
+
+      <Dialog open={briefOpen} onOpenChange={setBriefOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>✨ AI 帮你写需求</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-sm text-muted-foreground mb-1 block">
+                用一句话说说你要什么
+              </Label>
+              <Textarea
+                rows={2}
+                placeholder="例如：我需要一个赛博朋克风格的60秒品牌宣传片"
+                value={roughIdea}
+                onChange={e => setRoughIdea(e.target.value)}
+              />
+            </div>
+            {aiResult && (
+              <div className="bg-muted rounded-lg p-4">
+                <p className="text-xs text-muted-foreground mb-2">AI 生成结果：</p>
+                <p className="text-sm leading-relaxed">{aiResult}</p>
+              </div>
+            )}
+            {aiError && <p className="text-destructive text-sm">{aiError}</p>}
+          </div>
+          <DialogFooter className="gap-2">
+            {aiResult ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => { reset(); setRoughIdea(''); }}
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                >
+                  重新生成
+                </button>
+                <Button onClick={handleUseBrief}>使用这个描述</Button>
+              </>
+            ) : (
+              <Button onClick={handleGenerate} disabled={!roughIdea.trim() || aiLoading}>
+                {aiLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />生成中...</> : '生成描述'}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

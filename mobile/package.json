@@ -1,0 +1,46 @@
+{
+  "name": "mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo-google-fonts/manrope": "^0.4.2",
+    "@expo-google-fonts/space-grotesk": "^0.4.1",
+    "@expo/metro-runtime": "~6.1.2",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-masked-view/masked-view": "^0.3.2",
+    "@supabase/supabase-js": "^2.103.0",
+    "@tanstack/react-query": "^5.99.0",
+    "babel-preset-expo": "~54.0.10",
+    "expo": "~54.0.33",
+    "expo-blur": "^55.0.14",
+    "expo-constants": "^17.0.8",
+    "expo-font": "^55.0.6",
+    "expo-image-picker": "^55.0.18",
+    "expo-linear-gradient": "^55.0.13",
+    "expo-linking": "^7.0.5",
+    "expo-router": "~6.0.23",
+    "expo-secure-store": "^55.0.13",
+    "expo-status-bar": "~3.0.9",
+    "nativewind": "^4.2.3",
+    "react": "19.1.0",
+    "react-dom": "^19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "^5.7.0",
+    "react-native-screens": "^4.24.0",
+    "react-native-web": "^0.19.13",
+    "react-native-worklets": "file:./stubs/react-native-worklets",
+    "tailwindcss": "^3.4.19"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.0",
+    "babel-plugin-module-resolver": "^5.0.3",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}

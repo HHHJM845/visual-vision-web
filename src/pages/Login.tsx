@@ -7,10 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
-import { login } from "@/services/authService";
+
+const FIXED_EMAIL = "823760642@qq.com";
+const FIXED_PASSWORD = "321123";
 
 const schema = z.object({
-  account: z.string().min(1, "请输入手机号或邮箱"),
+  account: z.string().min(1, "请输入邮箱"),
   password: z.string().min(1, "请输入密码"),
 });
 type FormValues = z.infer<typeof schema>;
@@ -26,12 +28,19 @@ export default function Login() {
 
   async function onSubmit(data: FormValues) {
     setError("");
-    try {
-      const user = await login({ account: data.account, password: data.password });
-      setUser(user);
-      navigate(user.role === 'client' ? '/dashboard/client' : '/dashboard/aigcer');
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "登录失败");
+    if (data.account === FIXED_EMAIL && data.password === FIXED_PASSWORD) {
+      setUser({
+        id: 'admin-001',
+        email: FIXED_EMAIL,
+        phone: '',
+        nickname: '管理员',
+        role: 'client',
+        verificationStatus: 'verified',
+        clientVerificationType: 'realname',
+      });
+      navigate('/dashboard/client');
+    } else {
+      setError("账号或密码错误");
     }
   }
 

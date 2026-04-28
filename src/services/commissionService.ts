@@ -154,3 +154,32 @@ export async function getApplicationsByCommission(commissionId: number): Promise
   if (error) throw new Error(error.message);
   return (data || []).map(mapApplication);
 }
+
+export type ApplicantWithProfile = Application & {
+  bio: string;
+  styles: string[];
+  tools: string[];
+};
+
+export async function getApplicantsWithProfiles(
+  commissionId: number
+): Promise<ApplicantWithProfile[]> {
+  const { data, error } = await supabase
+    .from('applications')
+    .select(`
+      *,
+      profiles:aigcer_id (bio, styles, tools)
+    `)
+    .eq('commission_id', commissionId);
+  if (error) throw new Error(error.message);
+
+  return (data || []).map((row) => {
+    const profile = row.profiles as { bio: string; styles: string[]; tools: string[] } | null;
+    return {
+      ...mapApplication(row),
+      bio: profile?.bio || '',
+      styles: profile?.styles || [],
+      tools: profile?.tools || [],
+    };
+  });
+}

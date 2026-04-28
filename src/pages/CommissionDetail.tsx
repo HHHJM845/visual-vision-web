@@ -4,15 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Star, CheckCircle, Share2, ChevronLeft } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { applyToCommission } from "@/services/commissionService";
+import { applyToCommission, getApplicantsWithProfiles, ApplicantWithProfile } from "@/services/commissionService";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { Loader2 } from "lucide-react";
+import { useSmartMatch } from "@/hooks/useSmartMatch";
 
 const mockCommissions = [
   { id: 0, title: "企业品牌AI宣传片制作", description: "需要制作一支60秒企业品牌宣传AI影片，风格现代简洁，突出科技感，需包含产品展示、公司文化等内容。", tag: "实名认证" as const, reputation: "信誉优良", deadline: "2026-04-29", category: "商业宣传片", applicants: 0, priceRange: "¥3k ~ 8k", author: "柚柚酒", rating: 5, reviews: 17, completionRate: "17 / 17", handlingFee: "5%", type: "商业用途" },
@@ -43,6 +45,33 @@ const CommissionDetail = () => {
   const [expectedPrice, setExpectedPrice] = useState("");
   const [applying, setApplying] = useState(false);
   const commission = mockCommissions[Number(id)] || mockCommissions[0];
+
+  const [applicants, setApplicants] = useState<ApplicantWithProfile[]>([]);
+  const [activeTab, setActiveTab] = useState<'all' | 'smart'>('all');
+  const { isLoading: matchLoading, scores, error: matchError, runMatch } = useSmartMatch();
+
+  useEffect(() => {
+    getApplicantsWithProfiles(commission.id).then(setApplicants).catch(() => {});
+  }, [commission.id]);
+
+  function handleSmartTab() {
+    setActiveTab('smart');
+    runMatch(commission.description, commission.category, applicants);
+  }
+
+  function getScore(aigcerId: string): number | null {
+    if (!scores) return null;
+    return scores.find((s) => s.id === aigcerId)?.score ?? null;
+  }
+
+  function sortedApplicants(): ApplicantWithProfile[] {
+    if (activeTab !== 'smart' || !scores) return applicants;
+    return [...applicants].sort((a, b) => {
+      const sa = scores.find((s) => s.id === a.aigcerId)?.score ?? 0;
+      const sb = scores.find((s) => s.id === b.aigcerId)?.score ?? 0;
+      return sb - sa;
+    });
+  }
 
   async function handleApply() {
     if (!user) return;
@@ -241,16 +270,69 @@ const CommissionDetail = () => {
             <div className="bg-card rounded-lg border border-border p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-semibold text-card-foreground">应征AIGCer列表</h2>
-                <div className="flex gap-4 text-xs">
-                  <span className="text-primary cursor-pointer">本项目共应征AIGCer {commission.applicants} 名</span>
-                  <span className="text-primary cursor-pointer">需求方选定 0 名</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('all')}
+                    className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                      activeTab === 'all'
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'border-border text-muted-foreground hover:border-primary hover:text-primary'
+                    }`}
+                  >
+                    全部应征
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSmartTab}
+                    className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                      activeTab === 'smart'
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'border-border text-muted-foreground hover:border-primary hover:text-primary'
+                    }`}
+                  >
+                    ✨ 智能推荐
+                  </button>
                 </div>
               </div>
-              {commission.applicants === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">暂无AIGCer应征，快来成为第一位！</p>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">已有 {commission.applicants} 位AIGCer应征</p>
+
+              {matchLoading && (
+                <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  AI 正在分析匹配度...
+                </div>
               )}
+
+              {matchError && (
+                <p className="text-destructive text-sm text-center py-4">{matchError}</p>
+              )}
+
+              {!matchLoading && applicants.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-8">暂无AIGCer应征，快来成为第一位！</p>
+              )}
+
+              {!matchLoading && sortedApplicants().map((applicant) => {
+                const score = getScore(applicant.aigcerId);
+                return (
+                  <div
+                    key={applicant.id}
+                    className="flex items-start justify-between border border-border rounded-lg p-4 mb-3 last:mb-0"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-sm">{applicant.aigcerNickname}</span>
+                        {score !== null && (
+                          <span className="text-xs bg-cyan-500 text-white px-2 py-0.5 rounded-full">
+                            匹配 {score}%
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground line-clamp-2">{applicant.message}</p>
+                      <p className="text-xs text-primary mt-1">{applicant.expectedPrice}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </main>
         </div>

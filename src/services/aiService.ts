@@ -1,18 +1,20 @@
 const BASE_URL = import.meta.env.VITE_DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
-const API_KEY = import.meta.env.VITE_DEEPSEEK_API_KEY as string;
 
-async function callDeepSeek(messages: { role: string; content: string }[]): Promise<string> {
+async function callDeepSeek(messages: { role: 'system' | 'user' | 'assistant'; content: string }[], temperature = 0.7): Promise<string> {
+  const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY as string;
   const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({ model: 'deepseek-chat', messages, temperature: 0.7 }),
+    body: JSON.stringify({ model: 'deepseek-chat', messages, temperature }),
   });
   if (!res.ok) throw new Error(`DeepSeek API error: ${res.status}`);
   const data = await res.json();
-  return data.choices[0].message.content as string;
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== 'string') throw new Error('Unexpected DeepSeek response shape');
+  return content;
 }
 
 export async function enhanceBrief(roughIdea: string): Promise<string> {
@@ -55,6 +57,7 @@ ${JSON.stringify(applicants)}
 请为每个应征者打一个匹配度分数（0-100的整数），基于其风格、工具与委托需求的契合程度。
 只输出 JSON 数组，格式：[{"id": "...", "score": 85}, ...]
 不要有任何其他文字。`;
-  const raw = await callDeepSeek([{ role: 'user', content }]);
-  return JSON.parse(raw) as { id: string; score: number }[];
+  const raw = await callDeepSeek([{ role: 'user', content }], 0.1);
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  return JSON.parse(cleaned) as { id: string; score: number }[];
 }

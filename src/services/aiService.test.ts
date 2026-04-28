@@ -56,4 +56,10 @@ describe('matchApplicants', () => {
       matchApplicants('test', 'test', [])
     ).rejects.toThrow();
   });
+
+  it('parses JSON wrapped in markdown code fences', async () => {
+    mockDeepSeekResponse('```json\n[{"id":"a1","score":90}]\n```');
+    const result = await matchApplicants('desc', 'cat', [{ id: 'a1', bio: '', styles: [], tools: [] }]);
+    expect(result).toEqual([{ id: 'a1', score: 90 }]);
+  });
 });

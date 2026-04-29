@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import { assetUrl } from "@/lib/assets";
 
 const artworks = [
-  "/artworks/1.png",
-  "/artworks/2.png",
-  "/artworks/3.png",
-  "/artworks/4.png",
-  "/artworks/5.png",
-  "/artworks/6.png",
-  "/artworks/7.png",
-  "/artworks/8.png",
-  "/artworks/9.png",
-  "/artworks/10.png",
-  "/artworks/11.png",
-  "/artworks/12.png",
+  "artworks/1.webp",
+  "artworks/2.webp",
+  "artworks/3.webp",
+  "artworks/4.webp",
+  "artworks/5.webp",
+  "artworks/6.webp",
+  "artworks/7.webp",
+  "artworks/8.webp",
+  "artworks/9.webp",
+  "artworks/10.webp",
+  "artworks/11.webp",
+  "artworks/12.webp",
 ];
 
 const categories = ["商业宣传片", "短视频", "概念影像", "创意短片"];
@@ -110,7 +111,13 @@ const ArtworkCarousel = () => {
                       : "0 4px 12px rgba(0,0,0,0.12)",
                 }}
               >
-                <img src={url} alt="" className="w-full h-full object-cover" />
+                <img
+                  src={assetUrl(url)}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  loading={absDiff === 0 ? "eager" : "lazy"}
+                  decoding="async"
+                />
               </div>
             );
           })}
@@ -134,7 +141,7 @@ const ArtworkCarousel = () => {
                   : "border-transparent opacity-60 hover:opacity-90"
               }`}
             >
-              <img src={url} alt="" className="w-16 h-9 object-cover" />
+              <img src={assetUrl(url)} alt="" className="w-16 h-9 object-cover" loading="lazy" decoding="async" />
             </button>
           ))}
         </div>

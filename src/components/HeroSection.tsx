@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { assetUrl } from "@/lib/assets";
 
-const videos = ["/hero-bg.mp4", "/hero-bg2.mp4"];
+const videos = ["hero-bg.mp4", "hero-bg2.mp4"];
 
 const HeroSection = () => {
   const [current, setCurrent] = useState(0);
@@ -54,10 +55,11 @@ const HeroSection = () => {
         autoPlay
         muted
         playsInline
+        preload="metadata"
         onEnded={handleEnded}
         className="absolute inset-0 w-full h-full object-cover object-center"
       >
-        <source src={videos[current]} type="video/mp4" />
+        <source src={assetUrl(videos[current])} type="video/mp4" />
       </video>
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
 

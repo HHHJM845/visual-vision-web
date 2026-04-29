@@ -5,6 +5,7 @@ import {
   DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { assetUrl } from "@/lib/assets";
 
 const navItems = [
   { label: "项目", path: "/commissions" },
@@ -30,7 +31,7 @@ export default function Navbar() {
   return (
     <nav className="h-[var(--nav-height)] flex items-center px-6 bg-background border-b border-border sticky top-0 z-50">
       <Link to="/" className="flex items-center gap-2 mr-8">
-        <img src="/logo.png" alt="跃然承制" className="w-8 h-8 object-contain" />
+        <img src={assetUrl("logo.webp")} alt="跃然承制" className="w-8 h-8 object-contain" />
         <span className="text-xl font-bold text-primary">跃然承制</span>
         <span className="text-xs text-muted-foreground tracking-wider">VISIONAI.COM</span>
       </Link>

@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { register as registerUser } from "@/services/authService";
 import { UserRole } from "@/types/user";
 import { useToast } from "@/hooks/use-toast";
+import { assetUrl } from "@/lib/assets";
 
 const schema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
@@ -64,7 +65,7 @@ export default function Register() {
       <div className="w-full max-w-sm bg-card border border-border rounded-xl p-8 shadow-sm">
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-2 text-2xl font-bold text-primary">
-            <img src="/logo.png" alt="跃然承制" className="w-8 h-8 object-contain" />
+            <img src={assetUrl("logo.webp")} alt="跃然承制" className="w-8 h-8 object-contain" />
             跃然承制
           </Link>
           <p className="text-muted-foreground text-sm mt-2">创建新账号</p>

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { login as loginUser } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
+import { assetUrl } from "@/lib/assets";
 
 const schema = z.object({
   account: z.string().email("请输入有效的邮箱地址"),
@@ -54,7 +55,7 @@ export default function Login() {
       <div className="w-full max-w-sm bg-card border border-border rounded-xl p-8 shadow-sm">
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-2 text-2xl font-bold text-primary">
-            <img src="/logo.png" alt="跃然承制" className="w-8 h-8 object-contain" />
+            <img src={assetUrl("logo.webp")} alt="跃然承制" className="w-8 h-8 object-contain" />
             跃然承制
           </Link>
           <p className="text-muted-foreground text-sm mt-2">登录你的账号</p>

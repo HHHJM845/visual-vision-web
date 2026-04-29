@@ -1,4 +1,63 @@
+import { Pause, Play } from "lucide-react";
+import { type ChangeEvent, useRef, useState } from "react";
+
+const formatTime = (seconds: number) => {
+  if (!Number.isFinite(seconds)) return "0:00";
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+};
+
 const SolutionSection = () => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const handleTogglePlayback = () => {
+    const video = videoRef.current;
+
+    if (!video) return;
+
+    if (video.paused) {
+      void video.play();
+    } else {
+      video.pause();
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    const video = videoRef.current;
+
+    if (!video) return;
+
+    setDuration(video.duration || 0);
+  };
+
+  const handleTimeUpdate = () => {
+    const video = videoRef.current;
+
+    if (!video) return;
+
+    setCurrentTime(video.currentTime);
+    setProgress(video.duration ? (video.currentTime / video.duration) * 100 : 0);
+  };
+
+  const handleSeek = (event: ChangeEvent<HTMLInputElement>) => {
+    const video = videoRef.current;
+    const nextProgress = Number(event.target.value);
+
+    setProgress(nextProgress);
+
+    if (video && video.duration) {
+      video.currentTime = (nextProgress / 100) * video.duration;
+      setCurrentTime(video.currentTime);
+    }
+  };
+
   return (
     <section className="py-20 bg-background">
       <div className="max-w-5xl mx-auto px-4 text-center">
@@ -12,8 +71,9 @@ const SolutionSection = () => {
         {/* Laptop mockup */}
         <div className="relative max-w-2xl mx-auto mb-16">
           <div className="bg-muted rounded-xl border-2 border-border p-3 shadow-xl">
-            <div className="bg-card rounded-lg overflow-hidden aspect-video flex items-center justify-center">
+            <div className="relative bg-card rounded-lg overflow-hidden aspect-video flex items-center justify-center">
               <video
+                ref={videoRef}
                 className="w-full h-full object-cover rounded"
                 src="/mecha-squad-pv.mp4"
                 autoPlay
@@ -22,7 +82,38 @@ const SolutionSection = () => {
                 playsInline
                 preload="metadata"
                 aria-label="机甲战队项目视频预览"
+                onLoadedMetadata={handleLoadedMetadata}
+                onTimeUpdate={handleTimeUpdate}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
               />
+              <div className="absolute inset-x-3 bottom-3 flex items-center gap-3 rounded-full bg-foreground/75 px-3 py-2 text-background shadow-lg backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={handleTogglePlayback}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-background text-foreground transition hover:bg-background/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background focus-visible:ring-offset-2 focus-visible:ring-offset-foreground"
+                  aria-label={isPlaying ? "暂停视频" : "播放视频"}
+                >
+                  {isPlaying ? (
+                    <Pause className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Play className="h-4 w-4 translate-x-0.5" aria-hidden="true" />
+                  )}
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={progress}
+                  onChange={handleSeek}
+                  className="h-1.5 flex-1 cursor-pointer accent-background"
+                  aria-label="视频播放进度"
+                />
+                <span className="min-w-20 text-right text-xs font-medium tabular-nums">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </span>
+              </div>
             </div>
           </div>
           {/* Decorative elements */}

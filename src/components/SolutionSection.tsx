@@ -71,7 +71,7 @@ const SolutionSection = () => {
         {/* Laptop mockup */}
         <div className="relative max-w-2xl mx-auto mb-16">
           <div className="bg-muted rounded-xl border-2 border-border p-3 shadow-xl">
-            <div className="relative bg-card rounded-lg overflow-hidden aspect-video flex items-center justify-center">
+            <div className="group/video relative bg-card rounded-lg overflow-hidden aspect-video flex items-center justify-center">
               <video
                 ref={videoRef}
                 className="w-full h-full object-cover rounded"
@@ -87,7 +87,7 @@ const SolutionSection = () => {
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
               />
-              <div className="absolute inset-x-3 bottom-3 flex items-center gap-3 rounded-full bg-foreground/75 px-3 py-2 text-background shadow-lg backdrop-blur-md">
+              <div className="pointer-events-none absolute inset-x-3 bottom-3 flex translate-y-2 items-center gap-3 rounded-full bg-foreground/45 px-3 py-2 text-background opacity-0 shadow-lg backdrop-blur-md transition-all duration-200 ease-out group-hover/video:pointer-events-auto group-hover/video:translate-y-0 group-hover/video:opacity-90 group-focus-within/video:pointer-events-auto group-focus-within/video:translate-y-0 group-focus-within/video:opacity-90">
                 <button
                   type="button"
                   onClick={handleTogglePlayback}

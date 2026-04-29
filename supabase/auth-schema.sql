@@ -18,6 +18,20 @@ create table if not exists public.profiles (
   updated_at timestamptz not null default now()
 );
 
+alter table public.profiles add column if not exists email text;
+alter table public.profiles add column if not exists phone text default '';
+alter table public.profiles add column if not exists nickname text not null default '新用户';
+alter table public.profiles add column if not exists role text not null default 'aigcer';
+alter table public.profiles add column if not exists verification_status text not null default 'none';
+alter table public.profiles add column if not exists client_verification_type text;
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists aigcer_bio text;
+alter table public.profiles add column if not exists aigcer_styles text[] not null default '{}';
+alter table public.profiles add column if not exists aigcer_tools text[] not null default '{}';
+alter table public.profiles add column if not exists aigcer_portfolio jsonb not null default '[]'::jsonb;
+alter table public.profiles add column if not exists created_at timestamptz not null default now();
+alter table public.profiles add column if not exists updated_at timestamptz not null default now();
+
 create index if not exists profiles_role_idx on public.profiles(role);
 create index if not exists profiles_verification_status_idx on public.profiles(verification_status);
 

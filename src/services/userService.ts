@@ -1,11 +1,10 @@
-// src/services/userService.ts
-import { supabase } from '@/lib/supabase';
-import { User, VerificationStatus, ClientVerificationType, AigcerProfile } from '@/types/user';
-import { mapProfile } from '@/services/authService';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { AigcerProfile, ClientVerificationType, User, VerificationStatus } from '@/types/user';
 import { demoUsers } from '@/data/mockData';
+import { mapProfile, ProfileRow } from '@/services/authService';
 
 const USERS_KEY = 'visionai.users';
-const isSupabaseConfigured = !String(import.meta.env.VITE_SUPABASE_URL || '').includes('placeholder');
+const CURRENT_USER_KEY = 'visionai.currentUser';
 
 function readUsers(): User[] {
   if (typeof window === 'undefined') return demoUsers;
@@ -20,10 +19,12 @@ function readUsers(): User[] {
 
 function saveUser(userId: string, updates: Partial<User>): User {
   const users = readUsers();
-  const nextUsers = users.map((user) => user.id === userId ? { ...user, ...updates } : user);
+  const nextUsers = users.map((user) => (user.id === userId ? { ...user, ...updates } : user));
   const updated = nextUsers.find((user) => user.id === userId);
   if (!updated) throw new Error('用户不存在');
+
   window.localStorage.setItem(USERS_KEY, JSON.stringify(nextUsers));
+  window.localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updated));
   return updated;
 }
 
@@ -47,7 +48,8 @@ export async function updateVerificationStatus(
     .update(updates)
     .eq('id', userId)
     .select()
-    .single();
+    .single<ProfileRow>();
+
   if (error) throw new Error(error.message);
   return mapProfile(data);
 }
@@ -70,7 +72,8 @@ export async function saveAigcerProfile(
     })
     .eq('id', userId)
     .select()
-    .single();
+    .single<ProfileRow>();
+
   if (error) throw new Error(error.message);
   return mapProfile(data);
 }

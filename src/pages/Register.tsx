@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -13,17 +13,23 @@ import { useToast } from "@/hooks/use-toast";
 
 const schema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
-  nickname: z.string().min(2, "昵称至少2个字"),
-  password: z.string().min(6, "密码至少6位"),
+  nickname: z.string().min(2, "昵称至少 2 个字"),
+  password: z.string().min(6, "密码至少 6 位"),
 });
+
 type FormValues = z.infer<typeof schema>;
+
+const roleCards: Array<{ role: UserRole; title: string; description: string }> = [
+  { role: "aigcer", title: "我是 AIGCer", description: "接项目、展示作品" },
+  { role: "client", title: "我是需求方", description: "发项目、找承制" },
+];
 
 export default function Register() {
   const navigate = useNavigate();
-  const { setUser } = useAuth();
+  const { user, setUser } = useAuth();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
-  const initialRole = searchParams.get('role') === 'client' ? 'client' : 'aigcer';
+  const initialRole = searchParams.get("role") === "client" ? "client" : "aigcer";
   const [role, setRole] = useState<UserRole>(initialRole);
   const [error, setError] = useState("");
 
@@ -31,20 +37,25 @@ export default function Register() {
     resolver: zodResolver(schema),
   });
 
+  useEffect(() => {
+    if (!user) return;
+    navigate(user.role === "client" ? "/dashboard/client" : "/dashboard/aigcer", { replace: true });
+  }, [navigate, user]);
+
   async function onSubmit(data: FormValues) {
     setError("");
     try {
-      const user = await registerUser({
+      const nextUser = await registerUser({
         email: data.email,
         password: data.password,
         nickname: data.nickname,
         role,
       });
-      setUser(user);
-      toast({ title: "注册成功", description: "继续完成身份认证即可使用完整功能。" });
-      navigate(role === 'client' ? '/onboarding/client' : '/onboarding/aigcer');
+      setUser(nextUser);
+      toast({ title: "注册成功", description: "继续完成认证即可使用完整功能。" });
+      navigate(role === "client" ? "/onboarding/client" : "/onboarding/aigcer", { replace: true });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "注册失败");
+      setError(e instanceof Error ? e.message : "注册失败，请稍后重试");
     }
   }
 
@@ -60,24 +71,19 @@ export default function Register() {
         </div>
 
         <div className="grid grid-cols-2 gap-3 mb-6">
-          {([['aigcer', '🎬', '我是AIGCer', '接项目·展示作品'], ['client', '📋', '我是需求方', '发项目·找承制']] as const).map(
-            ([r, emoji, title, sub]) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setRole(r)}
-                className={`p-4 rounded-lg border-2 text-left transition-all ${
-                  role === r
-                    ? 'border-primary bg-accent'
-                    : 'border-border hover:border-primary/40'
-                }`}
-              >
-                <div className="text-2xl mb-1">{emoji}</div>
-                <div className="text-sm font-semibold text-foreground">{title}</div>
-                <div className="text-xs text-muted-foreground">{sub}</div>
-              </button>
-            )
-          )}
+          {roleCards.map((card) => (
+            <button
+              key={card.role}
+              type="button"
+              onClick={() => setRole(card.role)}
+              className={`p-4 rounded-lg border-2 text-left transition-all ${
+                role === card.role ? "border-primary bg-accent" : "border-border hover:border-primary/40"
+              }`}
+            >
+              <div className="text-sm font-semibold text-foreground">{card.title}</div>
+              <div className="text-xs text-muted-foreground mt-1">{card.description}</div>
+            </button>
+          ))}
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -93,7 +99,7 @@ export default function Register() {
           </div>
           <div>
             <Label htmlFor="password">密码</Label>
-            <Input id="password" type="password" placeholder="至少6位" className="mt-1" {...register("password")} />
+            <Input id="password" type="password" placeholder="至少 6 位" className="mt-1" {...register("password")} />
             {errors.password && <p className="text-destructive text-xs mt-1">{errors.password.message}</p>}
           </div>
 

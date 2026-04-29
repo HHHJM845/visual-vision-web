@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
@@ -11,25 +11,33 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function OnboardingClient() {
   const navigate = useNavigate();
-  const { user, setUser } = useAuth();
+  const { user, setUser, isLoading } = useAuth();
   const { toast } = useToast();
-  const [verType, setVerType] = useState<ClientVerificationType>('realname');
+  const [verType, setVerType] = useState<ClientVerificationType>("realname");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   const realnameForm = useForm<{ realname: string; idCard: string; code: string }>();
   const enterpriseForm = useForm<{ companyName: string; creditCode: string; contact: string; phone: string }>();
 
-  if (!user) { navigate('/login'); return null; }
+  useEffect(() => {
+    if (!isLoading && !user) navigate("/login", { replace: true, state: { from: "/onboarding/client" } });
+  }, [isLoading, navigate, user]);
+
+  if (isLoading || !user) return null;
 
   async function handleRealname(data: { realname: string; idCard: string; code: string }) {
-    if (!/^\d{6}$/.test(data.code)) { setError("请输入6位验证码"); return; }
+    setError("");
+    if (!data.realname.trim()) return setError("请输入真实姓名");
+    if (!/^\d{17}[\dXx]$/.test(data.idCard)) return setError("请输入有效的 18 位身份证号码");
+    if (!/^\d{6}$/.test(data.code)) return setError("请输入 6 位验证码");
+
     setSubmitting(true);
     try {
-      const updated = await updateVerificationStatus(user!.id, 'verified', 'realname');
+      const updated = await updateVerificationStatus(user.id, "verified", "realname");
       setUser(updated);
       toast({ title: "认证通过", description: "现在可以发布项目并管理应征了。" });
-      navigate('/dashboard/client');
+      navigate("/dashboard/client", { replace: true });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "认证失败，请稍后重试");
       setSubmitting(false);
@@ -37,13 +45,18 @@ export default function OnboardingClient() {
   }
 
   async function handleEnterprise(data: { companyName: string; creditCode: string; contact: string; phone: string }) {
-    if (!/^[0-9A-Z]{18}$/.test(data.creditCode)) { setError("请输入有效的18位统一社会信用代码"); return; }
+    setError("");
+    if (!data.companyName.trim()) return setError("请输入公司全称");
+    if (!/^[0-9A-Z]{18}$/.test(data.creditCode)) return setError("请输入有效的 18 位统一社会信用代码");
+    if (!data.contact.trim()) return setError("请输入联系人");
+    if (!/^1\d{10}$/.test(data.phone)) return setError("请输入有效手机号");
+
     setSubmitting(true);
     try {
-      const updated = await updateVerificationStatus(user!.id, 'verified', 'enterprise');
+      const updated = await updateVerificationStatus(user.id, "verified", "enterprise");
       setUser(updated);
       toast({ title: "企业认证通过", description: "你的项目会展示企业认证标签。" });
-      navigate('/dashboard/client');
+      navigate("/dashboard/client", { replace: true });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "认证失败，请稍后重试");
       setSubmitting(false);
@@ -54,28 +67,30 @@ export default function OnboardingClient() {
     <div className="min-h-screen bg-muted flex items-center justify-center px-4">
       <div className="w-full max-w-md bg-card border border-border rounded-xl p-8 shadow-sm">
         <div className="text-center mb-6">
-          <div className="text-4xl mb-3">📋</div>
           <h1 className="text-2xl font-bold">需求方资质认证</h1>
           <p className="text-muted-foreground text-sm mt-2">完成认证后即可发布项目</p>
         </div>
 
-        {/* 认证类型选择 */}
         <div className="grid grid-cols-2 gap-3 mb-6">
-          {([['realname', '👤', '个人实名认证', '实名认证标签'], ['enterprise', '🏢', '企业认证', '企业认证标签']] as const).map(
-            ([t, emoji, title, sub]) => (
-              <button key={t} type="button" onClick={() => { setVerType(t); setError(""); }}
-                className={`p-4 rounded-lg border-2 text-left transition-all ${
-                  verType === t ? 'border-primary bg-accent' : 'border-border hover:border-primary/40'
-                }`}>
-                <div className="text-2xl mb-1">{emoji}</div>
-                <div className="text-sm font-semibold">{title}</div>
-                <div className="text-xs text-muted-foreground">{sub}</div>
-              </button>
-            )
-          )}
+          {([
+            ["realname", "个人实名认证", "实名认证标签"],
+            ["enterprise", "企业认证", "企业认证标签"],
+          ] as const).map(([type, title, sub]) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => { setVerType(type); setError(""); }}
+              className={`p-4 rounded-lg border-2 text-left transition-all ${
+                verType === type ? "border-primary bg-accent" : "border-border hover:border-primary/40"
+              }`}
+            >
+              <div className="text-sm font-semibold">{title}</div>
+              <div className="text-xs text-muted-foreground mt-1">{sub}</div>
+            </button>
+          ))}
         </div>
 
-        {verType === 'realname' && (
+        {verType === "realname" && (
           <form onSubmit={realnameForm.handleSubmit(handleRealname)} className="space-y-4">
             <div>
               <Label>真实姓名</Label>
@@ -83,11 +98,11 @@ export default function OnboardingClient() {
             </div>
             <div>
               <Label>身份证号</Label>
-              <Input className="mt-1" placeholder="18位身份证号码" {...realnameForm.register("idCard", { required: true, minLength: 18, maxLength: 18 })} />
+              <Input className="mt-1" placeholder="18 位身份证号码" {...realnameForm.register("idCard", { required: true })} />
             </div>
             <div>
-              <Label>手机验证码 <span className="text-xs text-muted-foreground">（mock：任意6位数字）</span></Label>
-              <Input className="mt-1" placeholder="请输入6位验证码" maxLength={6} {...realnameForm.register("code", { required: true })} />
+              <Label>手机验证码 <span className="text-xs text-muted-foreground">测试阶段任意 6 位数字</span></Label>
+              <Input className="mt-1" placeholder="请输入 6 位验证码" maxLength={6} {...realnameForm.register("code", { required: true })} />
             </div>
             {error && <p className="text-destructive text-sm">{error}</p>}
             <Button type="submit" className="w-full rounded-full" disabled={submitting}>
@@ -96,7 +111,7 @@ export default function OnboardingClient() {
           </form>
         )}
 
-        {verType === 'enterprise' && (
+        {verType === "enterprise" && (
           <form onSubmit={enterpriseForm.handleSubmit(handleEnterprise)} className="space-y-4">
             <div>
               <Label>公司名称</Label>
@@ -104,7 +119,7 @@ export default function OnboardingClient() {
             </div>
             <div>
               <Label>统一社会信用代码</Label>
-              <Input className="mt-1" placeholder="18位信用代码" maxLength={18} {...enterpriseForm.register("creditCode", { required: true })} />
+              <Input className="mt-1" placeholder="18 位信用代码" maxLength={18} {...enterpriseForm.register("creditCode", { required: true })} />
             </div>
             <div>
               <Label>联系人姓名</Label>

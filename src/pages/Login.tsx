@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -11,14 +11,20 @@ import { login as loginUser } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
 
 const schema = z.object({
-  account: z.string().min(1, "请输入邮箱"),
+  account: z.string().email("请输入有效的邮箱地址"),
   password: z.string().min(1, "请输入密码"),
 });
+
 type FormValues = z.infer<typeof schema>;
+
+function dashboardPath(role: "client" | "aigcer") {
+  return role === "client" ? "/dashboard/client" : "/dashboard/aigcer";
+}
 
 export default function Login() {
   const navigate = useNavigate();
-  const { setUser } = useAuth();
+  const location = useLocation();
+  const { user, setUser } = useAuth();
   const { toast } = useToast();
   const [error, setError] = useState("");
 
@@ -26,13 +32,18 @@ export default function Login() {
     resolver: zodResolver(schema),
   });
 
+  useEffect(() => {
+    if (user) navigate(dashboardPath(user.role), { replace: true });
+  }, [navigate, user]);
+
   async function onSubmit(data: FormValues) {
     setError("");
     try {
-      const user = await loginUser({ account: data.account, password: data.password });
-      setUser(user);
+      const nextUser = await loginUser({ account: data.account, password: data.password });
+      setUser(nextUser);
       toast({ title: "登录成功", description: "已进入你的工作台。" });
-      navigate(user.role === 'client' ? '/dashboard/client' : '/dashboard/aigcer');
+      const redirectTo = (location.state as { from?: string } | null)?.from || dashboardPath(nextUser.role);
+      navigate(redirectTo, { replace: true });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "登录失败，请稍后重试");
     }
@@ -68,12 +79,6 @@ export default function Login() {
             {isSubmitting ? "登录中..." : "登录"}
           </Button>
         </form>
-
-        <div className="mt-5 rounded-lg bg-accent/50 p-3 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">体验账号</p>
-          <p>需求方：823760642@qq.com / 321123</p>
-          <p>AIGCer：aigcer@visionai.demo / 321123</p>
-        </div>
 
         <p className="text-center text-sm text-muted-foreground mt-6">
           还没有账号？{" "}

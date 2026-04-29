@@ -1,28 +1,42 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BadgeCheck, BrainCircuit, CheckCircle, ChevronLeft, Gauge, Loader2, MessageCircle, Share2, Sparkles, Star, UserRound, WandSparkles } from "lucide-react";
+import { AlertTriangle, BadgeCheck, BrainCircuit, CheckCircle, ChevronLeft, Gauge, Loader2, MessageCircle, Pencil, Share2, Sparkles, Star, Trash2, UserRound, WandSparkles, XCircle } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { EmptyState, ErrorState, PageLoading } from "@/components/StateViews";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { applyToCommission, getApplicantsWithProfiles, getCommissionById, updateApplicationStatus } from "@/services/commissionService";
+import {
+  advanceProjectProgress,
+  applyToCommission,
+  closeCommission,
+  deleteCommission,
+  getApplicantsWithProfiles,
+  getCommissionById,
+  getProjectProgress,
+  projectStages,
+  updateApplicationDraft,
+  updateApplicationStatus,
+  withdrawApplication,
+} from "@/services/commissionService";
 import { useSmartMatch } from "@/hooks/useSmartMatch";
-
-const milestones = [
-  { label: "开始合作", percent: 0 },
-  { label: "概念稿", percent: 20 },
-  { label: "分镜", percent: 40 },
-  { label: "粗剪", percent: 70 },
-  { label: "确认交付", percent: 100 },
-];
 
 export default function CommissionDetail() {
   const { id } = useParams();
@@ -38,6 +52,12 @@ export default function CommissionDetail() {
   const [activeTab, setActiveTab] = useState<'all' | 'smart'>('all');
   const [selectedApplicantId, setSelectedApplicantId] = useState<string | null>(null);
   const [applicationActionId, setApplicationActionId] = useState<string | null>(null);
+  const [projectAction, setProjectAction] = useState<null | 'close' | 'delete'>(null);
+  const [editingApplicationId, setEditingApplicationId] = useState<string | null>(null);
+  const [editApplicationMessage, setEditApplicationMessage] = useState("");
+  const [editApplicationPrice, setEditApplicationPrice] = useState("");
+  const [withdrawTargetId, setWithdrawTargetId] = useState<string | null>(null);
+  const [, setProgressTick] = useState(0);
   const { isLoading: matchLoading, scores, error: matchError, runMatch } = useSmartMatch();
 
   const { data: commission, isLoading, isError, refetch } = useQuery({
@@ -70,6 +90,20 @@ export default function CommissionDetail() {
   const selectedApplicant = applicants.find((applicant) => applicant.id === selectedApplicantId) ?? null;
   const acceptedApplicant = applicants.find((applicant) => applicant.status === 'accepted') ?? null;
   const isProjectOwner = !!user && !!commission && user.id === commission.authorId;
+  const isAcceptedAigcer = !!user && !!acceptedApplicant && user.id === acceptedApplicant.aigcerId;
+  const isClosed = commission?.status === 'closed';
+  const progress = commission ? getProjectProgress(commission.id) : null;
+  const currentStageIndex = progress ? projectStages.findIndex((stage) => stage.id === progress.currentStage) : 0;
+  const currentStage = projectStages[Math.max(currentStageIndex, 0)];
+  const nextStage = projectStages[Math.min(currentStageIndex + 1, projectStages.length - 1)];
+  const canAdvanceProgress = !!acceptedApplicant && !!commission && (isProjectOwner || isAcceptedAigcer) && currentStage.id !== 'delivered';
+  const progressActionLabel = currentStage.id === 'delivered'
+    ? '已完成'
+    : !canAdvanceProgress
+      ? '仅合作双方可更新'
+      : isProjectOwner
+        ? nextStage.ownerAction
+        : nextStage.aigcerAction;
 
   function getScore(aigcerId: string) {
     return scores?.find((item) => item.id === aigcerId)?.score ?? null;
@@ -124,11 +158,12 @@ export default function CommissionDetail() {
         description: status === 'accepted' ? '项目已进入合作中，双方工作台会同步状态。' : '该应征已从候选列表中移出。',
       });
       setSelectedApplicantId(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['commission-applicants', commission.id] }),
-        queryClient.invalidateQueries({ queryKey: ['applications'] }),
-        refetchApplicants(),
-      ]);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['commission-applicants', commission.id] }),
+      queryClient.invalidateQueries({ queryKey: ['applications'] }),
+      queryClient.invalidateQueries({ queryKey: ['commissions'] }),
+      refetchApplicants(),
+    ]);
     } catch (e: unknown) {
       toast({
         title: '操作失败',
@@ -145,11 +180,97 @@ export default function CommissionDetail() {
     toast({ title: "链接已复制", description: "可以发送给协作成员继续评估。" });
   }
 
+  function openApplicationEdit(applicationId: string) {
+    const application = applicants.find((item) => item.id === applicationId);
+    if (!application) return;
+    setEditingApplicationId(applicationId);
+    setEditApplicationMessage(application.message);
+    setEditApplicationPrice(application.expectedPrice);
+  }
+
+  async function handleSaveApplicationEdit() {
+    if (!editingApplicationId || !commission) return;
+    setApplicationActionId(editingApplicationId);
+    try {
+      await updateApplicationDraft(editingApplicationId, {
+        message: editApplicationMessage.trim(),
+        expectedPrice: editApplicationPrice.trim(),
+      });
+      toast({ title: '应征信息已更新', description: '需求方会看到最新报价和说明。' });
+      setEditingApplicationId(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['commission-applicants', commission.id] }),
+        queryClient.invalidateQueries({ queryKey: ['applications'] }),
+        refetchApplicants(),
+      ]);
+    } catch (e: unknown) {
+      toast({ title: '保存失败', description: e instanceof Error ? e.message : '请稍后重试', variant: 'destructive' });
+    } finally {
+      setApplicationActionId(null);
+    }
+  }
+
+  async function handleWithdrawApplication() {
+    if (!withdrawTargetId || !commission) return;
+    setApplicationActionId(withdrawTargetId);
+    try {
+      await withdrawApplication(withdrawTargetId);
+      toast({ title: '已撤回应征', description: '该项目将不再把你作为候选人展示。' });
+      setWithdrawTargetId(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['commission-applicants', commission.id] }),
+        queryClient.invalidateQueries({ queryKey: ['applications'] }),
+        refetchApplicants(),
+      ]);
+    } catch (e: unknown) {
+      toast({ title: '撤回失败', description: e instanceof Error ? e.message : '请稍后重试', variant: 'destructive' });
+    } finally {
+      setApplicationActionId(null);
+    }
+  }
+
+  async function handleProjectAction() {
+    if (!commission || !projectAction) return;
+    try {
+      if (projectAction === 'close') {
+        await closeCommission(commission.id);
+        toast({ title: '已关闭招募', description: '项目仍可查看，但新的创作者不能继续应征。' });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['commission', commission.id] }),
+          queryClient.invalidateQueries({ queryKey: ['commissions'] }),
+        ]);
+        await refetch();
+      } else {
+        await deleteCommission(commission.id);
+        toast({ title: '项目已删除', description: '项目和相关应征记录已移除。' });
+        navigate('/dashboard/client', { replace: true });
+      }
+    } catch (e: unknown) {
+      toast({ title: '操作失败', description: e instanceof Error ? e.message : '请稍后重试', variant: 'destructive' });
+    } finally {
+      setProjectAction(null);
+    }
+  }
+
+  function handleAdvanceProgress() {
+    if (!commission || !canAdvanceProgress) return;
+    const next = advanceProjectProgress(commission.id);
+    const stage = projectStages.find((item) => item.id === next.currentStage);
+    setProgressTick((value) => value + 1);
+    toast({
+      title: stage?.id === 'delivered' ? '项目已完成交付' : `已推进到${stage?.label ?? '下一阶段'}`,
+      description: isProjectOwner ? '节点状态已同步到项目详情。' : '需求方可以继续确认下一步交付节点。',
+    });
+  }
+
   function getApplyButton() {
     if (!commission) return null;
+    if (isClosed) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已关闭招募</Button>;
     if (isExpired) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已截止</Button>;
     if (acceptedApplicant) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已进入合作中</Button>;
     if (!user) return <Button className="w-full rounded-full text-base" size="lg" onClick={() => navigate('/login')}>登录后应征</Button>;
+    if (isProjectOwner) return <Button className="w-full rounded-full text-base" size="lg" disabled>不能应征自己的项目</Button>;
+    if (user.role !== 'aigcer') return <Button className="w-full rounded-full text-base" size="lg" disabled>仅创作者可应征</Button>;
     if (user.verificationStatus !== 'verified') return <Button className="w-full rounded-full text-base" size="lg" onClick={() => navigate('/onboarding/aigcer')}>完成认证后应征</Button>;
     if (hasApplied) return <Button className="w-full rounded-full text-base" size="lg" disabled>已提交应征</Button>;
     return <Button className="w-full rounded-full text-base" size="lg" onClick={() => setApplyOpen(true)}>应征项目</Button>;
@@ -213,7 +334,7 @@ export default function CommissionDetail() {
             <div className="mb-6 rounded-lg border border-border bg-card p-6">
               <div className="mb-2 flex items-start justify-between gap-4">
                 <h1 className="text-2xl font-bold text-card-foreground">{commission.title}</h1>
-                <Badge variant={isExpired ? "secondary" : "outline"} className="flex-shrink-0 text-xs">{isExpired ? "已截止" : "审核项目"}</Badge>
+                <Badge variant={isExpired || isClosed ? "secondary" : "outline"} className="flex-shrink-0 text-xs">{isClosed ? "已关闭" : isExpired ? "已截止" : "审核项目"}</Badge>
               </div>
               <div className="mb-6 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                 <span>发布方 {commission.authorNickname}</span>
@@ -225,7 +346,7 @@ export default function CommissionDetail() {
               <div className="mb-6 rounded-lg bg-accent/50 p-5">
                 <h3 className="mb-4 text-center font-bold text-primary">承制流程</h3>
                 <div className="grid gap-3 text-xs text-muted-foreground sm:grid-cols-5">
-                  {milestones.map((item) => (
+                  {projectStages.map((item) => (
                     <div key={item.label} className="rounded-lg bg-background p-3 text-center shadow-sm">
                       <div className="mx-auto mb-2 h-2 w-full rounded-full bg-border">
                         <div className="h-2 rounded-full bg-primary" style={{ width: `${item.percent}%` }} />
@@ -252,12 +373,35 @@ export default function CommissionDetail() {
                 需求方选定合作 AIGCer 后，项目报酬将进入平台托管；创作者按节点提交概念稿、分镜和粗剪，需求方验收后确认交付。
               </div>
               <div className="mt-6">
-                <Progress value={acceptedApplicant ? 20 : isExpired ? 100 : 0} className="h-2" />
+                <Progress value={acceptedApplicant && currentStage ? currentStage.percent : isExpired ? 100 : 0} className="h-2" />
                 <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-                  {milestones.map((item) => <span key={item.label}>{item.label}</span>)}
+                  {projectStages.map((item) => <span key={item.label}>{item.label}</span>)}
                 </div>
               </div>
             </div>
+
+            {isProjectOwner && (
+              <div className="mb-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Project Admin</p>
+                    <h2 className="mt-1 text-lg font-bold text-foreground">项目管理</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">编辑需求、关闭招募或移除无效项目。</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" className="rounded-full" onClick={() => navigate(`/commissions/${commission.id}/edit`)}>
+                      <Pencil className="mr-2 h-4 w-4" />编辑
+                    </Button>
+                    <Button variant="outline" className="rounded-full" disabled={isClosed} onClick={() => setProjectAction('close')}>
+                      <XCircle className="mr-2 h-4 w-4" />关闭招募
+                    </Button>
+                    <Button variant="destructive" className="rounded-full" onClick={() => setProjectAction('delete')}>
+                      <Trash2 className="mr-2 h-4 w-4" />删除
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {acceptedApplicant && (
               <div className="mb-6 rounded-2xl border border-primary/20 bg-accent/60 p-5 shadow-sm">
@@ -270,6 +414,42 @@ export default function CommissionDetail() {
                     </p>
                   </div>
                   <Badge className="w-fit rounded-full bg-primary text-primary-foreground">合作中</Badge>
+                </div>
+              </div>
+            )}
+
+            {acceptedApplicant && currentStage && (
+              <div className="mb-6 rounded-2xl border border-border bg-card p-6 shadow-sm">
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Delivery Control</p>
+                    <h2 className="mt-1 text-lg font-bold text-foreground">合作节点管理</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      当前阶段：{currentStage.label}。{currentStage.id === 'delivered' ? '项目已完成交付，可进入评价与复盘。' : `下一阶段是${nextStage.label}。`}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="w-fit rounded-full">{currentStage.percent}%</Badge>
+                </div>
+                <div className="grid gap-3 md:grid-cols-5">
+                  {projectStages.map((stage, index) => {
+                    const done = index <= currentStageIndex;
+                    return (
+                      <div key={stage.id} className={`rounded-xl border p-3 text-sm ${done ? 'border-primary/30 bg-accent text-foreground' : 'border-border bg-muted/40 text-muted-foreground'}`}>
+                        <div className={`mb-2 h-2 rounded-full ${done ? 'bg-primary' : 'bg-border'}`} />
+                        <p className="font-medium">{stage.label}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-5 flex flex-col gap-3 rounded-xl bg-muted p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    {canAdvanceProgress
+                      ? '确认当前节点已完成后，可推进到下一阶段。'
+                      : '只有项目发布方或已选定创作者可以更新节点。'}
+                  </p>
+                  <Button className="rounded-full" onClick={handleAdvanceProgress} disabled={!canAdvanceProgress}>
+                    {progressActionLabel}
+                  </Button>
                 </div>
               </div>
             )}
@@ -335,7 +515,7 @@ export default function CommissionDetail() {
                               <span className="font-semibold text-foreground">{applicant.aigcerNickname}</span>
                               <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${recommendation.className}`}>{recommendation.label}</span>
                               <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                                {applicant.status === 'accepted' ? '已选定' : applicant.status === 'rejected' ? '已拒绝' : '待沟通'}
+                                {applicant.status === 'accepted' ? '已选定' : applicant.status === 'rejected' ? '已拒绝' : applicant.status === 'withdrawn' ? '已撤回' : '待沟通'}
                               </span>
                             </div>
                             <p className="text-sm leading-6 text-muted-foreground">{applicant.message}</p>
@@ -366,6 +546,16 @@ export default function CommissionDetail() {
                               <Button variant="outline" size="sm" className="rounded-full" onClick={() => setSelectedApplicantId(applicant.id)}>
                                 查看解释
                               </Button>
+                              {user?.id === applicant.aigcerId && applicant.status === 'pending' && (
+                                <>
+                                  <Button variant="outline" size="sm" className="rounded-full" onClick={() => openApplicationEdit(applicant.id)}>
+                                    修改
+                                  </Button>
+                                  <Button variant="outline" size="sm" className="rounded-full" disabled={applicationActionId === applicant.id} onClick={() => setWithdrawTargetId(applicant.id)}>
+                                    撤回
+                                  </Button>
+                                </>
+                              )}
                               {isProjectOwner && applicant.status === 'pending' && (
                                 <>
                                   <Button
@@ -520,6 +710,75 @@ export default function CommissionDetail() {
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!editingApplicationId} onOpenChange={(open) => !open && setEditingApplicationId(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>修改应征信息</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>应征留言</Label>
+              <Textarea
+                className="mt-1"
+                rows={4}
+                value={editApplicationMessage}
+                onChange={(event) => setEditApplicationMessage(event.target.value)}
+              />
+              <p className="mt-1 text-right text-xs text-muted-foreground">{editApplicationMessage.length}/200</p>
+            </div>
+            <div>
+              <Label>期望报酬</Label>
+              <Input
+                className="mt-1"
+                value={editApplicationPrice}
+                onChange={(event) => setEditApplicationPrice(event.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingApplicationId(null)}>取消</Button>
+            <Button
+              onClick={handleSaveApplicationEdit}
+              disabled={!editApplicationMessage.trim() || !editApplicationPrice.trim() || applicationActionId === editingApplicationId}
+            >
+              {applicationActionId === editingApplicationId ? '保存中...' : '保存修改'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!withdrawTargetId} onOpenChange={(open) => !open && setWithdrawTargetId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>撤回应征？</AlertDialogTitle>
+            <AlertDialogDescription>
+              撤回后，需求方将不再把你作为该项目的候选人。若之后想再次应征，需要重新提交。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleWithdrawApplication}>确认撤回</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!projectAction} onOpenChange={(open) => !open && setProjectAction(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{projectAction === 'delete' ? '删除项目？' : '关闭招募？'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {projectAction === 'delete'
+                ? '删除后，项目详情和相关应征记录会被移除。这个操作适合误发布或无效项目。'
+                : '关闭后，项目仍可查看，但新的创作者不能继续应征，已有应征仍保留。'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleProjectAction}>
+              {projectAction === 'delete' ? '确认删除' : '确认关闭'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

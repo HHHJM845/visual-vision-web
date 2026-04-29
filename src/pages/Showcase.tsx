@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
 import { ArrowUpRight, BadgeCheck, Clock3, Film, MessageSquare, ShoppingBag, Sparkles } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import { FilterChip, PageHero, PageShell, SectionTitle } from "@/components/PageChrome";
 import { SearchEmptyState } from "@/components/StateViews";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { showcaseItems } from "@/data/mockData";
+import { createShowcaseIntent, ShowcaseIntent } from "@/services/engagementService";
 
 const categories = ["全部类型", "宣传片", "短视频", "概念影像", "数字人"];
 
@@ -44,16 +48,54 @@ const ShowcaseCard = ({ item, index, onOpen }: { item: typeof showcaseItems[numb
 };
 
 const Showcase = () => {
-  const { toast } = useToast();
+  const navigate = useNavigate();
   const [category, setCategory] = useState("全部类型");
   const [selected, setSelected] = useState<typeof showcaseItems[number] | null>(null);
+  const [requirement, setRequirement] = useState("");
+  const [contact, setContact] = useState("");
+  const [formError, setFormError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createdIntent, setCreatedIntent] = useState<ShowcaseIntent | null>(null);
   const visible = useMemo(() => showcaseItems.filter((item) => category === "全部类型" || item.category === category), [category]);
   const fastDelivery = visible.filter((item) => item.tag === "24H" || item.tag === "48H");
   const recommended = visible.filter((item) => item.tag !== "24H" && item.tag !== "48H");
 
-  function handleReserve() {
-    toast({ title: "已加入沟通意向", description: "正式下单前会先进入需求确认与报价沟通。" });
+  function resetDialog() {
     setSelected(null);
+    setRequirement("");
+    setContact("");
+    setFormError("");
+    setIsSubmitting(false);
+    setCreatedIntent(null);
+  }
+
+  function handleOpen(item: typeof showcaseItems[number]) {
+    setSelected(item);
+    setRequirement("");
+    setContact("");
+    setFormError("");
+    setCreatedIntent(null);
+  }
+
+  function handleReserve() {
+    if (!selected) return;
+    setFormError("");
+    setIsSubmitting(true);
+    try {
+      const intent = createShowcaseIntent({
+        serviceId: selected.id,
+        serviceTitle: selected.title,
+        author: selected.author,
+        price: selected.price,
+        requirement,
+        contact,
+      });
+      setCreatedIntent(intent);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "提交失败，请稍后重试");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -90,7 +132,7 @@ const Showcase = () => {
               <SectionTitle title="快速交付" description="适合短周期发布、活动预热和社媒素材。" />
               {fastDelivery.length ? (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  {fastDelivery.map((item, index) => <ShowcaseCard key={item.id} item={item} index={index} onOpen={() => setSelected(item)} />)}
+                  {fastDelivery.map((item, index) => <ShowcaseCard key={item.id} item={item} index={index} onOpen={() => handleOpen(item)} />)}
                 </div>
               ) : (
                 <SearchEmptyState onReset={() => setCategory("全部类型")} />
@@ -100,7 +142,7 @@ const Showcase = () => {
             <section className="mb-12">
               <SectionTitle title="好推荐" description="结合售出记录、交付方式和风格覆盖挑选。" />
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {recommended.map((item, index) => <ShowcaseCard key={item.id} item={item} index={index + 2} onOpen={() => setSelected(item)} />)}
+                {recommended.map((item, index) => <ShowcaseCard key={item.id} item={item} index={index + 2} onOpen={() => handleOpen(item)} />)}
               </div>
             </section>
 
@@ -125,28 +167,77 @@ const Showcase = () => {
         )}
       </main>
 
-      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent>
+      <Dialog open={!!selected} onOpenChange={(open) => !open && resetDialog()}>
+        <DialogContent className="sm:max-w-xl">
           {selected && (
             <>
-              <DialogHeader><DialogTitle>{selected.title}</DialogTitle></DialogHeader>
-              <div className="rounded-2xl border border-border bg-accent/60 p-6">
-                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-background text-primary shadow-sm">
-                  <Film className="h-7 w-7" />
-                </div>
-                <p className="text-sm text-muted-foreground">由 {selected.author} 提供，{selected.delivery}。</p>
-              </div>
-              <div className="grid gap-3 text-sm sm:grid-cols-2">
-                <div><span className="text-muted-foreground">创作者：</span>{selected.author}</div>
-                <div><span className="text-muted-foreground">交付：</span>{selected.delivery}</div>
-                <div><span className="text-muted-foreground">类型：</span>{selected.category}</div>
-                <div><span className="text-muted-foreground">起价：</span><span className="font-bold text-price">¥{selected.price}</span></div>
-              </div>
-              <div className="flex flex-wrap gap-2">{selected.tag && <Badge>{selected.tag}</Badge>}<Badge variant="outline">售后沟通</Badge><Badge variant="outline">节点验收</Badge></div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setSelected(null)}>再看看</Button>
-                <Button onClick={handleReserve}><ShoppingBag className="mr-2 h-4 w-4" />发起沟通</Button>
-              </DialogFooter>
+              <DialogHeader><DialogTitle>{createdIntent ? "沟通意向已提交" : selected.title}</DialogTitle></DialogHeader>
+              {createdIntent ? (
+                <>
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6">
+                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-background text-primary shadow-sm">
+                      <BadgeCheck className="h-7 w-7" />
+                    </div>
+                    <p className="font-semibold text-foreground">已生成沟通记录</p>
+                    <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                      记录编号 {createdIntent.id}，需求会进入报价确认，后续提醒已同步到消息中心。
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-muted/40 p-4 text-sm">
+                    <p className="font-medium text-foreground">{createdIntent.serviceTitle}</p>
+                    <p className="mt-1 text-muted-foreground">{createdIntent.requirement}</p>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={resetDialog}>完成</Button>
+                    <Button onClick={() => navigate("/messages")}>查看消息</Button>
+                  </DialogFooter>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-2xl border border-border bg-accent/60 p-6">
+                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-background text-primary shadow-sm">
+                      <Film className="h-7 w-7" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">由 {selected.author} 提供，{selected.delivery}。</p>
+                  </div>
+                  <div className="grid gap-3 text-sm sm:grid-cols-2">
+                    <div><span className="text-muted-foreground">创作者：</span>{selected.author}</div>
+                    <div><span className="text-muted-foreground">交付：</span>{selected.delivery}</div>
+                    <div><span className="text-muted-foreground">类型：</span>{selected.category}</div>
+                    <div><span className="text-muted-foreground">起价：</span><span className="font-bold text-price">¥{selected.price}</span></div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">{selected.tag && <Badge>{selected.tag}</Badge>}<Badge variant="outline">售后沟通</Badge><Badge variant="outline">节点验收</Badge></div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="showcase-requirement">需求摘要</Label>
+                      <Textarea
+                        id="showcase-requirement"
+                        value={requirement}
+                        onChange={(event) => setRequirement(event.target.value)}
+                        placeholder="例如：30 秒产品预热视频，需要偏科技感，7 天内交第一版。"
+                        rows={4}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="showcase-contact">联系方式</Label>
+                      <Input
+                        id="showcase-contact"
+                        value={contact}
+                        onChange={(event) => setContact(event.target.value)}
+                        placeholder="手机号 / 微信 / 邮箱"
+                      />
+                    </div>
+                    {formError && <p className="text-sm text-destructive">{formError}</p>}
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={resetDialog}>再看看</Button>
+                    <Button onClick={handleReserve} disabled={isSubmitting}>
+                      <ShoppingBag className="mr-2 h-4 w-4" />
+                      {isSubmitting ? "提交中..." : "确认沟通意向"}
+                    </Button>
+                  </DialogFooter>
+                </>
+              )}
             </>
           )}
         </DialogContent>

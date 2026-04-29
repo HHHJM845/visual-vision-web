@@ -12,6 +12,7 @@ const navItems = [
   { label: "橱窗", path: "/showcase" },
   { label: "影片", path: "/gallery" },
   { label: "活动", path: "/events" },
+  { label: "消息", path: "/messages" },
   { label: "App", path: "/app" },
 ];
 

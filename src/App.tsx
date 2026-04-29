@@ -7,11 +7,13 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import Commissions from "./pages/Commissions";
 import CommissionDetail from "./pages/CommissionDetail";
+import CommissionEdit from "./pages/CommissionEdit";
 import CommissionNew from "./pages/CommissionNew";
 import Gallery from "./pages/Gallery";
 import Showcase from "./pages/Showcase";
 import Events from "./pages/Events";
 import AppPage from "./pages/AppPage";
+import Messages from "./pages/Messages";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import OnboardingAigcer from "./pages/OnboardingAigcer";
@@ -39,10 +41,12 @@ const App = () => (
             <Route path="/dashboard/aigcer" element={<DashboardAigcer />} />
             <Route path="/commissions" element={<Commissions />} />
             <Route path="/commissions/new" element={<CommissionNew />} />
+            <Route path="/commissions/:id/edit" element={<CommissionEdit />} />
             <Route path="/commissions/:id" element={<CommissionDetail />} />
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/showcase" element={<Showcase />} />
             <Route path="/events" element={<Events />} />
+            <Route path="/messages" element={<Messages />} />
             <Route path="/app" element={<AppPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

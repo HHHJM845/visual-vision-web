@@ -200,18 +200,26 @@ export async function register(params: RegisterParams): Promise<User> {
 export async function login(params: LoginParams): Promise<User> {
   if (!isSupabaseConfigured) return localLogin(params);
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: params.account,
-    password: params.password,
-  });
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: params.account,
+      password: params.password,
+    });
 
-  if (error || !data.user) {
-    throw new Error('账号或密码错误');
+    if (error || !data.user) {
+      throw new Error('账号或密码错误');
+    }
+
+    const user = (await fetchProfile(data.user.id)) || (await upsertProfile(data.user));
+    persistCurrentUser(user);
+    return user;
+  } catch (error) {
+    try {
+      return localLogin(params);
+    } catch {
+      throw error instanceof Error ? error : new Error('账号或密码错误');
+    }
   }
-
-  const user = (await fetchProfile(data.user.id)) || (await upsertProfile(data.user));
-  persistCurrentUser(user);
-  return user;
 }
 
 export async function logout(): Promise<void> {

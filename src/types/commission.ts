@@ -13,6 +13,7 @@ export interface Commission {
   authorNickname: string;
   authorVerification: 'realname' | 'enterprise' | 'none';
   purpose: '商业用途' | '个人用途';
+  status?: 'open' | 'closed';
   style?: string;
   resolution?: string;
   format?: string;
@@ -30,6 +31,6 @@ export interface Application {
   aigcerNickname: string;
   message: string;
   expectedPrice: string;
-  status: 'pending' | 'accepted' | 'rejected';
+  status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
   appliedAt: string;
 }

@@ -35,12 +35,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     async function loadUser() {
-      const stored =
-        !isSupabaseConfigured && typeof window !== 'undefined'
-          ? window.localStorage.getItem(CURRENT_USER_KEY)
-          : null;
+      const stored = typeof window !== 'undefined'
+        ? window.localStorage.getItem(CURRENT_USER_KEY)
+        : null;
+      let hasStoredUser = false;
       if (stored) {
         try {
+          hasStoredUser = true;
           setUserState(JSON.parse(stored) as User);
         } catch {
           window.localStorage.removeItem(CURRENT_USER_KEY);
@@ -49,7 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const current = await getCurrentUser().catch(() => null);
       if (mounted) {
-        setUser(current);
+        if (current) setUser(current);
+        else if (!hasStoredUser) setUser(null);
         setIsLoading(false);
       }
     }

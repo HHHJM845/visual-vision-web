@@ -5,7 +5,24 @@ import { demoApplications, demoCommissions, demoUsers } from '@/data/mockData';
 
 const COMMISSIONS_KEY = 'visionai.commissions';
 const APPLICATIONS_KEY = 'visionai.applications';
+const PROJECT_PROGRESS_KEY = 'visionai.projectProgress';
 const isSupabaseConfigured = !String(import.meta.env.VITE_SUPABASE_URL || '').includes('placeholder');
+
+export const projectStages = [
+  { id: 'kickoff', label: '开始合作', percent: 0, ownerAction: '确认启动', aigcerAction: '查看需求' },
+  { id: 'concept', label: '概念稿', percent: 20, ownerAction: '确认概念稿', aigcerAction: '提交概念稿' },
+  { id: 'storyboard', label: '分镜', percent: 40, ownerAction: '确认分镜', aigcerAction: '提交分镜' },
+  { id: 'roughCut', label: '粗剪', percent: 70, ownerAction: '确认粗剪', aigcerAction: '提交粗剪' },
+  { id: 'delivered', label: '确认交付', percent: 100, ownerAction: '完成验收', aigcerAction: '查看验收' },
+] as const;
+
+export type ProjectStageId = typeof projectStages[number]['id'];
+
+export interface ProjectProgress {
+  commissionId: number;
+  currentStage: ProjectStageId;
+  updatedAt: string;
+}
 
 function readStored<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -40,6 +57,41 @@ function saveLocalApplications(applications: Application[]) {
   writeStored(APPLICATIONS_KEY, applications);
 }
 
+function localProgressRecords(): ProjectProgress[] {
+  return readStored<ProjectProgress[]>(PROJECT_PROGRESS_KEY, []);
+}
+
+function saveLocalProgress(records: ProjectProgress[]) {
+  writeStored(PROJECT_PROGRESS_KEY, records);
+}
+
+export function getProjectProgress(commissionId: number): ProjectProgress {
+  const existing = localProgressRecords().find((item) => item.commissionId === commissionId);
+  return existing ?? {
+    commissionId,
+    currentStage: 'kickoff',
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function advanceProjectProgress(commissionId: number): ProjectProgress {
+  const records = localProgressRecords();
+  const current = getProjectProgress(commissionId);
+  const index = projectStages.findIndex((stage) => stage.id === current.currentStage);
+  const nextStage = projectStages[Math.min(index + 1, projectStages.length - 1)].id;
+  const next: ProjectProgress = {
+    commissionId,
+    currentStage: nextStage,
+    updatedAt: new Date().toISOString(),
+  };
+
+  saveLocalProgress([
+    next,
+    ...records.filter((item) => item.commissionId !== commissionId),
+  ]);
+  return next;
+}
+
 async function withFallback<T>(remote: () => Promise<T>, local: () => T | Promise<T>): Promise<T> {
   if (!isSupabaseConfigured) return local();
   try {
@@ -65,6 +117,7 @@ function mapCommission(row: Record<string, unknown>): Commission {
     authorNickname: row.author_nickname as string,
     authorVerification: (row.author_verification as Commission['authorVerification']) || 'none',
     purpose: row.purpose as Commission['purpose'],
+    status: (row.status as Commission['status']) || 'open',
     rating: row.rating as number,
     reviews: row.reviews as number,
     completionRate: row.completion_rate as string,
@@ -92,7 +145,8 @@ export async function getCommissions(): Promise<Commission[]> {
       .select('*')
       .order('created_at', { ascending: false });
     if (error) throw new Error(error.message);
-    return (data || []).map(mapCommission);
+    const rows = (data || []).map(mapCommission);
+    return rows.length ? rows : localCommissions().sort((a, b) => b.id - a.id);
   }, () => localCommissions().sort((a, b) => b.id - a.id));
 }
 
@@ -103,7 +157,9 @@ export async function getCommissionById(id: number): Promise<Commission | null> 
       .select('*')
       .eq('id', id)
       .single();
-    if (error) return null;
+    if (error || !data) {
+      return localCommissions().find((commission) => commission.id === id) ?? null;
+    }
     return mapCommission(data);
   }, () => localCommissions().find((commission) => commission.id === id) ?? null);
 }
@@ -138,6 +194,7 @@ export async function createCommission(
         author_nickname: data.authorNickname,
         author_verification: data.authorVerification,
         purpose: data.purpose,
+        status: data.status ?? 'open',
         rating: data.rating ?? 5,
         reviews: data.reviews ?? 0,
         completion_rate: data.completionRate ?? '0 / 0',
@@ -158,9 +215,66 @@ export async function createCommission(
       reviews: data.reviews ?? 0,
       completionRate: data.completionRate ?? '0 / 0',
       handlingFee: data.handlingFee ?? '5%',
+      status: data.status ?? 'open',
     };
     saveLocalCommissions([commission, ...commissions]);
     return commission;
+  });
+}
+
+function toCommissionRow(updates: Partial<Commission>) {
+  const row: Record<string, unknown> = {};
+  if (updates.title !== undefined) row.title = updates.title;
+  if (updates.description !== undefined) row.description = updates.description;
+  if (updates.category !== undefined) row.category = updates.category;
+  if (updates.priceRange !== undefined) row.price_range = updates.priceRange;
+  if (updates.deadline !== undefined) row.deadline = updates.deadline;
+  if (updates.purpose !== undefined) row.purpose = updates.purpose;
+  if (updates.format !== undefined) row.format = updates.format;
+  if (updates.status !== undefined) row.status = updates.status;
+  return row;
+}
+
+export async function updateCommission(
+  commissionId: number,
+  updates: Partial<Pick<Commission, 'title' | 'description' | 'category' | 'priceRange' | 'deadline' | 'purpose' | 'format' | 'status'>>,
+): Promise<Commission> {
+  return withFallback(async () => {
+    const { data, error } = await supabase
+      .from('commissions')
+      .update(toCommissionRow(updates))
+      .eq('id', commissionId)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return mapCommission(data);
+  }, () => {
+    let updated: Commission | undefined;
+    const commissions = localCommissions().map((commission) => {
+      if (commission.id !== commissionId) return commission;
+      updated = { ...commission, ...updates };
+      return updated;
+    });
+    if (!updated) throw new Error('项目不存在');
+    saveLocalCommissions(commissions);
+    return updated;
+  });
+}
+
+export function closeCommission(commissionId: number): Promise<Commission> {
+  return updateCommission(commissionId, { status: 'closed' });
+}
+
+export async function deleteCommission(commissionId: number): Promise<void> {
+  return withFallback(async () => {
+    const { error } = await supabase
+      .from('commissions')
+      .delete()
+      .eq('id', commissionId);
+    if (error) throw new Error(error.message);
+  }, () => {
+    saveLocalCommissions(localCommissions().filter((commission) => commission.id !== commissionId));
+    saveLocalApplications(localApplications().filter((application) => application.commissionId !== commissionId));
   });
 }
 
@@ -235,7 +349,8 @@ export async function getApplicationsByAigcer(aigcerId: string): Promise<Applica
       .select('*')
       .eq('aigcer_id', aigcerId);
     if (error) throw new Error(error.message);
-    return (data || []).map(mapApplication);
+    const rows = (data || []).map(mapApplication);
+    return rows.length ? rows : localApplications().filter((application) => application.aigcerId === aigcerId);
   }, () => localApplications().filter((application) => application.aigcerId === aigcerId));
 }
 
@@ -246,7 +361,8 @@ export async function getApplicationsByCommission(commissionId: number): Promise
       .select('*')
       .eq('commission_id', commissionId);
     if (error) throw new Error(error.message);
-    return (data || []).map(mapApplication);
+    const rows = (data || []).map(mapApplication);
+    return rows.length ? rows : localApplications().filter((application) => application.commissionId === commissionId);
   }, () => localApplications().filter((application) => application.commissionId === commissionId));
 }
 
@@ -266,7 +382,10 @@ export async function getApplicationsByAuthor(authorId: string): Promise<Applica
       .select('*')
       .in('commission_id', ids);
     if (error) throw new Error(error.message);
-    return (data || []).map(mapApplication);
+    const rows = (data || []).map(mapApplication);
+    if (rows.length) return rows;
+    const localIds = new Set(localCommissions().filter((commission) => commission.authorId === authorId).map((commission) => commission.id));
+    return localApplications().filter((application) => localIds.has(application.commissionId));
   }, () => {
     const ids = new Set(localCommissions().filter((commission) => commission.authorId === authorId).map((commission) => commission.id));
     return localApplications().filter((application) => ids.has(application.commissionId));
@@ -316,6 +435,66 @@ export async function updateApplicationStatus(
   });
 }
 
+export async function updateApplicationDraft(
+  applicationId: string,
+  updates: Pick<Application, 'message' | 'expectedPrice'>,
+): Promise<Application> {
+  return withFallback(async () => {
+    const { data, error } = await supabase
+      .from('applications')
+      .update({
+        message: updates.message,
+        expected_price: updates.expectedPrice,
+      })
+      .eq('id', applicationId)
+      .eq('status', 'pending')
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return mapApplication(data);
+  }, () => {
+    let updated: Application | undefined;
+    const applications = localApplications().map((application) => {
+      if (application.id !== applicationId) return application;
+      if (application.status !== 'pending') throw new Error('当前状态不可修改');
+      updated = {
+        ...application,
+        message: updates.message,
+        expectedPrice: updates.expectedPrice,
+      };
+      return updated;
+    });
+    if (!updated) throw new Error('应征记录不存在');
+    saveLocalApplications(applications);
+    return updated;
+  });
+}
+
+export function withdrawApplication(applicationId: string): Promise<Application> {
+  return withFallback(async () => {
+    const { data, error } = await supabase
+      .from('applications')
+      .update({ status: 'withdrawn' })
+      .eq('id', applicationId)
+      .eq('status', 'pending')
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return mapApplication(data);
+  }, () => {
+    let updated: Application | undefined;
+    const applications = localApplications().map((application) => {
+      if (application.id !== applicationId) return application;
+      if (application.status !== 'pending') throw new Error('当前状态不可撤回');
+      updated = { ...application, status: 'withdrawn' as const };
+      return updated;
+    });
+    if (!updated) throw new Error('应征记录不存在');
+    saveLocalApplications(applications);
+    return updated;
+  });
+}
+
 export type ApplicantWithProfile = Application & {
   bio: string;
   styles: string[];
@@ -335,7 +514,7 @@ export async function getApplicantsWithProfiles(
       .eq('commission_id', commissionId);
     if (error) throw new Error(error.message);
 
-    return (data || []).map((row) => {
+    const rows = (data || []).map((row) => {
       const profile = row.profiles as { aigcer_bio: string; aigcer_styles: string[]; aigcer_tools: string[] } | null;
       return {
         ...mapApplication(row),
@@ -344,6 +523,18 @@ export async function getApplicantsWithProfiles(
         tools: profile?.aigcer_tools || [],
       };
     });
+    if (rows.length) return rows;
+    return localApplications()
+      .filter((application) => application.commissionId === commissionId)
+      .map((application) => {
+        const profile = demoUsers.find((user) => user.id === application.aigcerId)?.aigcerProfile;
+        return {
+          ...application,
+          bio: profile?.bio || '',
+          styles: profile?.styles || [],
+          tools: profile?.tools || [],
+        };
+      });
   }, () => localApplications()
     .filter((application) => application.commissionId === commissionId)
     .map((application) => {

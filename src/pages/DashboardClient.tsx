@@ -24,16 +24,12 @@ export default function DashboardClient() {
   const { data: commissions = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['commissions', 'author', user?.id ?? 'guest'],
     queryFn: () => getCommissionsByAuthor(user!.id),
-    enabled: !!user && user.role === 'client',
+    enabled: !!user,
   });
 
   if (!user) {
     return <div className="min-h-screen bg-muted"><Navbar /><PermissionState title="请先登录" description="登录后可以查看你的项目工作台。" actionLabel="去登录" onAction={() => navigate('/login')} /></div>;
   }
-  if (user.role !== 'client') {
-    return <div className="min-h-screen bg-muted"><Navbar /><PermissionState title="当前账号不是需求方" description="AIGCer 请前往创作者工作台查看应征项目。" actionLabel="进入创作者工作台" onAction={() => navigate('/dashboard/aigcer')} /></div>;
-  }
-
   const stats = {
     total: commissions.length,
     recruiting: commissions.filter(c => new Date(c.deadline) >= new Date() && c.applicants === 0).length,

@@ -105,11 +105,11 @@ export default function CommissionNew() {
     );
   }
 
-  if (user.role !== 'client' || user.verificationStatus !== 'verified') {
+  if (user.verificationStatus !== 'verified') {
     return (
       <div className="min-h-screen bg-muted">
         <Navbar />
-        <PermissionState title="暂时无法发布项目" description="只有完成认证的需求方账号可以发布项目。" actionLabel="去完成认证" onAction={() => navigate('/onboarding/client')} />
+        <PermissionState title="暂时无法发布项目" description="完成认证后即可发布项目。" actionLabel="去完成认证" onAction={() => navigate('/onboarding/client')} />
       </div>
     );
   }

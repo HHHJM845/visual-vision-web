@@ -26,8 +26,6 @@ export default function Navbar() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
-  const dashboardPath = user?.role === 'client' ? '/dashboard/client' : '/dashboard/aigcer';
-
   return (
     <nav className="h-[var(--nav-height)] flex items-center px-6 bg-background border-b border-border sticky top-0 z-50">
       <Link to="/" className="flex items-center gap-2 mr-8">
@@ -68,8 +66,11 @@ export default function Navbar() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => navigate(dashboardPath)}>
-                我的工作台
+              <DropdownMenuItem onClick={() => navigate('/dashboard/client')}>
+                需求方工作台
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/dashboard/aigcer')}>
+                创作者工作台
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => { logout(); navigate('/'); }}

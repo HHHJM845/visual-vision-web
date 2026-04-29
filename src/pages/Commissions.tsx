@@ -29,7 +29,7 @@ export default function Commissions() {
     queryFn: getCommissions,
   });
 
-  const canPost = user?.role === 'client' && user.verificationStatus === 'verified';
+  const canPost = !!user && user.verificationStatus === 'verified';
 
   const filtered = useMemo(() => {
     const now = Date.now();

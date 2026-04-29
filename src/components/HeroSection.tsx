@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { assetUrl } from "@/lib/assets";
@@ -24,20 +23,16 @@ const HeroSection = () => {
   function handleClient() {
     if (!user) {
       navigate("/register?role=client");
-    } else if (user.role === "client") {
-      navigate("/commissions/new");
     } else {
-      toast.error("您已是创作者账号，无法切换角色");
+      navigate("/commissions/new");
     }
   }
 
   function handleAigcer() {
     if (!user) {
       navigate("/register?role=aigcer");
-    } else if (user.role === "aigcer") {
-      navigate("/commissions");
     } else {
-      toast.error("您已是需求方账号，无法切换角色");
+      navigate("/commissions");
     }
   }
 

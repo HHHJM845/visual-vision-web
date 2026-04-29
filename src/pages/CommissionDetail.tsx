@@ -120,7 +120,6 @@ export default function CommissionDetail() {
     if (!commission) return null;
     if (isExpired) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已截止</Button>;
     if (!user) return <Button className="w-full rounded-full text-base" size="lg" onClick={() => navigate('/login')}>登录后应征</Button>;
-    if (user.role === 'client') return <Button className="w-full rounded-full text-base" size="lg" disabled>需求方账号无法应征</Button>;
     if (user.verificationStatus !== 'verified') return <Button className="w-full rounded-full text-base" size="lg" onClick={() => navigate('/onboarding/aigcer')}>完成认证后应征</Button>;
     if (hasApplied) return <Button className="w-full rounded-full text-base" size="lg" disabled>已提交应征</Button>;
     return <Button className="w-full rounded-full text-base" size="lg" onClick={() => setApplyOpen(true)}>应征项目</Button>;

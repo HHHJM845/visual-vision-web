@@ -20,7 +20,7 @@ export default function DashboardAigcer() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const [appDetails, setAppDetails] = useState<AppWithCommission[]>([]);
 
-  const canLoadApplications = !!user && user.role === "aigcer";
+  const canLoadApplications = !!user;
   const { data: applications = [], isLoading, isError, refetch } = useQuery({
     queryKey: ["applications", "aigcer", user?.id ?? "guest"],
     queryFn: () => getApplicationsByAigcer(user!.id),
@@ -70,20 +70,6 @@ export default function DashboardAigcer() {
           description="登录后可以查看你的创作者工作台。"
           actionLabel="去登录"
           onAction={() => navigate("/login")}
-        />
-      </div>
-    );
-  }
-
-  if (user.role !== "aigcer") {
-    return (
-      <div className="min-h-screen bg-muted">
-        <Navbar />
-        <PermissionState
-          title="当前账号不是 AIGCer"
-          description="需求方请前往需求方工作台管理项目。"
-          actionLabel="进入需求方工作台"
-          onAction={() => navigate("/dashboard/client")}
         />
       </div>
     );

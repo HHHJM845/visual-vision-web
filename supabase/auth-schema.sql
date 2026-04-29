@@ -107,3 +107,31 @@ on storage.objects for all
 to authenticated
 using (bucket_id = 'portfolios' and auth.uid()::text = (storage.foldername(name))[1])
 with check (bucket_id = 'portfolios' and auth.uid()::text = (storage.foldername(name))[1]);
+
+do $$
+begin
+  if to_regclass('public.applications') is not null then
+    execute 'drop policy if exists "Authors can update applications for own commissions" on public.applications';
+    execute '
+      create policy "Authors can update applications for own commissions"
+      on public.applications for update
+      to authenticated
+      using (
+        exists (
+          select 1
+          from public.commissions
+          where commissions.id = applications.commission_id
+            and commissions.author_id = auth.uid()
+        )
+      )
+      with check (
+        exists (
+          select 1
+          from public.commissions
+          where commissions.id = applications.commission_id
+            and commissions.author_id = auth.uid()
+        )
+      )
+    ';
+  end if;
+end $$;

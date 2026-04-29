@@ -250,6 +250,72 @@ export async function getApplicationsByCommission(commissionId: number): Promise
   }, () => localApplications().filter((application) => application.commissionId === commissionId));
 }
 
+export async function getApplicationsByAuthor(authorId: string): Promise<Application[]> {
+  return withFallback(async () => {
+    const { data: commissions, error: commissionError } = await supabase
+      .from('commissions')
+      .select('id')
+      .eq('author_id', authorId);
+    if (commissionError) throw new Error(commissionError.message);
+
+    const ids = (commissions || []).map((commission) => commission.id as number);
+    if (ids.length === 0) return [];
+
+    const { data, error } = await supabase
+      .from('applications')
+      .select('*')
+      .in('commission_id', ids);
+    if (error) throw new Error(error.message);
+    return (data || []).map(mapApplication);
+  }, () => {
+    const ids = new Set(localCommissions().filter((commission) => commission.authorId === authorId).map((commission) => commission.id));
+    return localApplications().filter((application) => ids.has(application.commissionId));
+  });
+}
+
+export async function updateApplicationStatus(
+  commissionId: number,
+  applicationId: string,
+  status: Application['status'],
+): Promise<Application> {
+  return withFallback(async () => {
+    if (status === 'accepted') {
+      await supabase
+        .from('applications')
+        .update({ status: 'rejected' })
+        .eq('commission_id', commissionId)
+        .eq('status', 'pending')
+        .neq('id', applicationId);
+    }
+
+    const { data, error } = await supabase
+      .from('applications')
+      .update({ status })
+      .eq('id', applicationId)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return mapApplication(data);
+  }, () => {
+    let updated: Application | undefined;
+    const applications = localApplications().map((application) => {
+      if (application.commissionId !== commissionId) return application;
+      if (application.id === applicationId) {
+        updated = { ...application, status };
+        return updated;
+      }
+      if (status === 'accepted' && application.status === 'pending') {
+        return { ...application, status: 'rejected' as const };
+      }
+      return application;
+    });
+
+    if (!updated) throw new Error('应征记录不存在');
+    saveLocalApplications(applications);
+    return updated;
+  });
+}
+
 export type ApplicantWithProfile = Application & {
   bio: string;
   styles: string[];
@@ -264,18 +330,18 @@ export async function getApplicantsWithProfiles(
       .from('applications')
       .select(`
         *,
-        profiles:aigcer_id (bio, styles, tools)
+        profiles:aigcer_id (aigcer_bio, aigcer_styles, aigcer_tools)
       `)
       .eq('commission_id', commissionId);
     if (error) throw new Error(error.message);
 
     return (data || []).map((row) => {
-      const profile = row.profiles as { bio: string; styles: string[]; tools: string[] } | null;
+      const profile = row.profiles as { aigcer_bio: string; aigcer_styles: string[]; aigcer_tools: string[] } | null;
       return {
         ...mapApplication(row),
-        bio: profile?.bio || '',
-        styles: profile?.styles || [],
-        tools: profile?.tools || [],
+        bio: profile?.aigcer_bio || '',
+        styles: profile?.aigcer_styles || [],
+        tools: profile?.aigcer_tools || [],
       };
     });
   }, () => localApplications()

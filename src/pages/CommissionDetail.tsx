@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { applyToCommission, getApplicantsWithProfiles, getCommissionById } from "@/services/commissionService";
+import { applyToCommission, getApplicantsWithProfiles, getCommissionById, updateApplicationStatus } from "@/services/commissionService";
 import { useSmartMatch } from "@/hooks/useSmartMatch";
 
 const milestones = [
@@ -37,6 +37,7 @@ export default function CommissionDetail() {
   const [applying, setApplying] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'smart'>('all');
   const [selectedApplicantId, setSelectedApplicantId] = useState<string | null>(null);
+  const [applicationActionId, setApplicationActionId] = useState<string | null>(null);
   const { isLoading: matchLoading, scores, error: matchError, runMatch } = useSmartMatch();
 
   const { data: commission, isLoading, isError, refetch } = useQuery({
@@ -67,6 +68,8 @@ export default function CommissionDetail() {
     : 0;
   const isExpired = commission ? new Date(commission.deadline).getTime() < Date.now() : false;
   const selectedApplicant = applicants.find((applicant) => applicant.id === selectedApplicantId) ?? null;
+  const acceptedApplicant = applicants.find((applicant) => applicant.status === 'accepted') ?? null;
+  const isProjectOwner = !!user && !!commission && user.id === commission.authorId;
 
   function getScore(aigcerId: string) {
     return scores?.find((item) => item.id === aigcerId)?.score ?? null;
@@ -111,6 +114,32 @@ export default function CommissionDetail() {
     }
   }
 
+  async function handleApplicationStatus(applicationId: string, status: 'accepted' | 'rejected') {
+    if (!commission) return;
+    setApplicationActionId(applicationId);
+    try {
+      await updateApplicationStatus(commission.id, applicationId, status);
+      toast({
+        title: status === 'accepted' ? '已选定创作者' : '已拒绝应征',
+        description: status === 'accepted' ? '项目已进入合作中，双方工作台会同步状态。' : '该应征已从候选列表中移出。',
+      });
+      setSelectedApplicantId(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['commission-applicants', commission.id] }),
+        queryClient.invalidateQueries({ queryKey: ['applications'] }),
+        refetchApplicants(),
+      ]);
+    } catch (e: unknown) {
+      toast({
+        title: '操作失败',
+        description: e instanceof Error ? e.message : '请稍后重试',
+        variant: 'destructive',
+      });
+    } finally {
+      setApplicationActionId(null);
+    }
+  }
+
   function handleShare() {
     navigator.clipboard?.writeText(window.location.href).catch(() => undefined);
     toast({ title: "链接已复制", description: "可以发送给协作成员继续评估。" });
@@ -119,6 +148,7 @@ export default function CommissionDetail() {
   function getApplyButton() {
     if (!commission) return null;
     if (isExpired) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已截止</Button>;
+    if (acceptedApplicant) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已进入合作中</Button>;
     if (!user) return <Button className="w-full rounded-full text-base" size="lg" onClick={() => navigate('/login')}>登录后应征</Button>;
     if (user.verificationStatus !== 'verified') return <Button className="w-full rounded-full text-base" size="lg" onClick={() => navigate('/onboarding/aigcer')}>完成认证后应征</Button>;
     if (hasApplied) return <Button className="w-full rounded-full text-base" size="lg" disabled>已提交应征</Button>;
@@ -222,12 +252,27 @@ export default function CommissionDetail() {
                 需求方选定合作 AIGCer 后，项目报酬将进入平台托管；创作者按节点提交概念稿、分镜和粗剪，需求方验收后确认交付。
               </div>
               <div className="mt-6">
-                <Progress value={isExpired ? 100 : 0} className="h-2" />
+                <Progress value={acceptedApplicant ? 20 : isExpired ? 100 : 0} className="h-2" />
                 <div className="mt-2 flex justify-between text-xs text-muted-foreground">
                   {milestones.map((item) => <span key={item.label}>{item.label}</span>)}
                 </div>
               </div>
             </div>
+
+            {acceptedApplicant && (
+              <div className="mb-6 rounded-2xl border border-primary/20 bg-accent/60 p-5 shadow-sm">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Project Started</p>
+                    <h2 className="mt-1 text-lg font-bold text-foreground">已选定 {acceptedApplicant.aigcerNickname}</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      当前项目已进入合作中。下一步可继续确认档期、首版样片节点和交付验收标准。
+                    </p>
+                  </div>
+                  <Badge className="w-fit rounded-full bg-primary text-primary-foreground">合作中</Badge>
+                </div>
+              </div>
+            )}
 
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
               <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -289,7 +334,9 @@ export default function CommissionDetail() {
                             <div className="mb-2 flex flex-wrap items-center gap-2">
                               <span className="font-semibold text-foreground">{applicant.aigcerNickname}</span>
                               <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${recommendation.className}`}>{recommendation.label}</span>
-                              <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{applicant.status === 'accepted' ? '已选定' : '待沟通'}</span>
+                              <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                                {applicant.status === 'accepted' ? '已选定' : applicant.status === 'rejected' ? '已拒绝' : '待沟通'}
+                              </span>
                             </div>
                             <p className="text-sm leading-6 text-muted-foreground">{applicant.message}</p>
                             {activeTab === 'smart' && (
@@ -315,9 +362,32 @@ export default function CommissionDetail() {
                                 <p className="text-sm font-semibold text-price">{applicant.expectedPrice}</p>
                               </div>
                             </div>
-                            <Button variant="outline" size="sm" className="rounded-full" onClick={() => setSelectedApplicantId(applicant.id)}>
-                              查看解释
-                            </Button>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button variant="outline" size="sm" className="rounded-full" onClick={() => setSelectedApplicantId(applicant.id)}>
+                                查看解释
+                              </Button>
+                              {isProjectOwner && applicant.status === 'pending' && (
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="rounded-full"
+                                    disabled={applicationActionId === applicant.id}
+                                    onClick={() => handleApplicationStatus(applicant.id, 'rejected')}
+                                  >
+                                    拒绝
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="rounded-full"
+                                    disabled={applicationActionId === applicant.id}
+                                    onClick={() => handleApplicationStatus(applicant.id, 'accepted')}
+                                  >
+                                    {applicationActionId === applicant.id ? '处理中...' : '选定合作'}
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -428,12 +498,23 @@ export default function CommissionDetail() {
               })()}
               <DialogFooter>
                 <Button variant="outline" onClick={() => setSelectedApplicantId(null)}>关闭</Button>
-                <Button onClick={() => {
-                  toast({ title: "已记录沟通意向", description: "后续可以接入私信或项目选定流程。" });
-                  setSelectedApplicantId(null);
-                }}>
-                  记录沟通意向
-                </Button>
+                {isProjectOwner && selectedApplicant.status === 'pending' && (
+                  <>
+                    <Button
+                      variant="outline"
+                      disabled={applicationActionId === selectedApplicant.id}
+                      onClick={() => handleApplicationStatus(selectedApplicant.id, 'rejected')}
+                    >
+                      拒绝应征
+                    </Button>
+                    <Button
+                      disabled={applicationActionId === selectedApplicant.id}
+                      onClick={() => handleApplicationStatus(selectedApplicant.id, 'accepted')}
+                    >
+                      {applicationActionId === selectedApplicant.id ? '处理中...' : '选定合作'}
+                    </Button>
+                  </>
+                )}
               </DialogFooter>
             </>
           )}

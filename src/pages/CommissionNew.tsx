@@ -75,7 +75,7 @@ export default function CommissionNew() {
     const authorVerification = user!.clientVerificationType === 'enterprise' ? 'enterprise' as const : 'realname' as const;
 
     try {
-      await createCommission({
+      const commission = await createCommission({
         title: data.title,
         description: data.description,
         category: data.category,
@@ -90,7 +90,7 @@ export default function CommissionNew() {
         authorVerification,
       });
       toast({ title: "项目已发布", description: "AIGCer 现在可以在项目广场看到这条需求。" });
-      navigate('/dashboard/client');
+      navigate(`/commissions/${commission.id}`);
     } catch (e: unknown) {
       setSubmitError(e instanceof Error ? e.message : "发布失败，请稍后重试");
     }

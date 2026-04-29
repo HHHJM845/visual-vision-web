@@ -111,7 +111,7 @@ export default function DashboardAigcer() {
           {[
             { num: stats.applying, label: "应征中" },
             { num: stats.ongoing, label: "进行中" },
-            { num: stats.done, label: "已结束" },
+            { num: stats.done, label: "未选中" },
             { num: `￥${stats.income}`, label: "累计收入" },
           ].map(({ num, label }) => (
             <div key={label} className="bg-card border border-border rounded-lg p-4 text-center">
@@ -173,7 +173,7 @@ export default function DashboardAigcer() {
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                         app.status === "accepted" ? "bg-yellow-100 text-yellow-700" : "bg-blue-100 text-blue-700"
                       }`}>
-                        {app.status === "accepted" ? "进行中" : "已应征"}
+                        {app.status === "accepted" ? "合作中" : app.status === "rejected" ? "未选中" : "已应征"}
                       </span>
                       {app.status === "accepted" && (
                         <div className="mt-3">

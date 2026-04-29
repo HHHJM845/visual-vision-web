@@ -6,15 +6,17 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EmptyState, ErrorState, PageLoading, PermissionState } from "@/components/StateViews";
 import { useAuth } from "@/contexts/AuthContext";
-import { getCommissionsByAuthor } from "@/services/commissionService";
-import { Commission } from "@/types/commission";
+import { getApplicationsByAuthor, getCommissionsByAuthor } from "@/services/commissionService";
+import { Application, Commission } from "@/types/commission";
 
-function statusLabel(c: Commission) {
+function statusLabel(c: Commission, applications: Application[]) {
   const now = new Date();
   const deadline = new Date(c.deadline);
+  const related = applications.filter((application) => application.commissionId === c.id);
+  if (related.some((application) => application.status === 'accepted')) return { label: "合作中", class: "bg-yellow-100 text-yellow-700" };
   if (deadline < now) return { label: "已结束", class: "bg-muted text-muted-foreground" };
-  if (c.applicants === 0) return { label: "招募中", class: "bg-blue-100 text-blue-700" };
-  return { label: "进行中", class: "bg-yellow-100 text-yellow-700" };
+  if (related.some((application) => application.status === 'pending')) return { label: "待选择", class: "bg-blue-100 text-blue-700" };
+  return { label: "招募中", class: "bg-blue-100 text-blue-700" };
 }
 
 export default function DashboardClient() {
@@ -27,14 +29,20 @@ export default function DashboardClient() {
     enabled: !!user,
   });
 
+  const { data: applications = [] } = useQuery({
+    queryKey: ['applications', 'author', user?.id ?? 'guest'],
+    queryFn: () => getApplicationsByAuthor(user!.id),
+    enabled: !!user,
+  });
+
   if (!user) {
     return <div className="min-h-screen bg-muted"><Navbar /><PermissionState title="请先登录" description="登录后可以查看你的项目工作台。" actionLabel="去登录" onAction={() => navigate('/login')} /></div>;
   }
   const stats = {
     total: commissions.length,
-    recruiting: commissions.filter(c => new Date(c.deadline) >= new Date() && c.applicants === 0).length,
-    ongoing: commissions.filter(c => new Date(c.deadline) >= new Date() && c.applicants > 0).length,
-    pending: 0,
+    recruiting: commissions.filter(c => new Date(c.deadline) >= new Date() && !applications.some(app => app.commissionId === c.id && app.status === 'accepted')).length,
+    ongoing: commissions.filter(c => applications.some(app => app.commissionId === c.id && app.status === 'accepted')).length,
+    pending: commissions.filter(c => applications.some(app => app.commissionId === c.id && app.status === 'pending')).length,
   };
 
   const tagLabel = user.clientVerificationType === 'enterprise' ? '企业认证' :
@@ -42,8 +50,8 @@ export default function DashboardClient() {
 
   const visibleByTab: Record<string, Commission[]> = {
     all: commissions,
-    recruiting: commissions.filter(c => new Date(c.deadline) >= new Date() && c.applicants === 0),
-    ongoing: commissions.filter(c => new Date(c.deadline) >= new Date() && c.applicants > 0),
+    recruiting: commissions.filter(c => new Date(c.deadline) >= new Date() && !applications.some(app => app.commissionId === c.id && app.status === 'accepted')),
+    ongoing: commissions.filter(c => applications.some(app => app.commissionId === c.id && app.status === 'accepted')),
     done: commissions.filter(c => new Date(c.deadline) < new Date()),
   };
 
@@ -63,7 +71,7 @@ export default function DashboardClient() {
     return (
       <div className="space-y-3">
         {items.map(c => {
-          const s = statusLabel(c);
+          const s = statusLabel(c, applications);
           return (
             <div key={c.id} onClick={() => navigate(`/commissions/${c.id}`)}
               className="flex cursor-pointer items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:bg-muted">

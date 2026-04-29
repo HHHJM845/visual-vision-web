@@ -1,8 +1,4 @@
-import { assetUrl } from "@/lib/assets";
-
 const SolutionSection = () => {
-  const previewVideoUrl = `${assetUrl("mecha-squad-pv.mp4")}?response-content-disposition=inline&response-content-type=video%2Fmp4`;
-
   return (
     <section className="py-20 bg-background">
       <div className="max-w-5xl mx-auto px-4 text-center">
@@ -19,7 +15,7 @@ const SolutionSection = () => {
             <div className="bg-card rounded-lg overflow-hidden aspect-video flex items-center justify-center">
               <video
                 className="w-full h-full object-cover rounded"
-                src={previewVideoUrl}
+                src="/mecha-squad-pv.mp4"
                 autoPlay
                 muted
                 loop

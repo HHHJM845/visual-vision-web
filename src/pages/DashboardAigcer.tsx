@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,10 @@ interface AppWithCommission {
 
 export default function DashboardAigcer() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [appDetails, setAppDetails] = useState<AppWithCommission[]>([]);
+  const activeTab = searchParams.get("tab") === "portfolio" ? "portfolio" : "projects";
 
   const canLoadApplications = !!user;
   const { data: applications = [], isLoading, isError, refetch } = useQuery({
@@ -120,7 +122,13 @@ export default function DashboardAigcer() {
         </div>
 
         <div className="bg-card border border-border rounded-xl p-6">
-          <Tabs defaultValue="projects">
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => {
+              if (value === "portfolio") setSearchParams({ tab: "portfolio" });
+              else setSearchParams({});
+            }}
+          >
             <TabsList className="bg-transparent gap-4 p-0 mb-4">
               {[
                 ["projects", "我的项目"],

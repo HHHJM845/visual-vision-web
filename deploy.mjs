@@ -3,15 +3,20 @@ import fs from 'fs';
 import path from 'path';
 
 const config = {
-  host: '47.86.30.22',
-  port: 22,
-  username: 'root',
-  password: 'Huang_21254875',
+  host: process.env.DEPLOY_HOST,
+  port: Number(process.env.DEPLOY_PORT || 22),
+  username: process.env.DEPLOY_USER,
+  password: process.env.DEPLOY_PASSWORD,
   readyTimeout: 30000,
 };
 
-const REMOTE_DIR = '/var/www/visual-vision';
+const REMOTE_DIR = process.env.DEPLOY_REMOTE_DIR || '/var/www/visual-vision';
 const LOCAL_DIST = './dist';
+
+if (!config.host || !config.username || !config.password) {
+  console.error('Missing DEPLOY_HOST, DEPLOY_USER, or DEPLOY_PASSWORD.');
+  process.exit(1);
+}
 
 function runCommand(conn, cmd) {
   return new Promise((resolve, reject) => {
@@ -30,6 +35,14 @@ function runCommand(conn, cmd) {
       stream.stderr.on('data', (d) => { process.stderr.write(d); stderr += d; });
     });
   });
+}
+
+function shellEscape(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function sudoCommand(cmd) {
+  return `printf '%s\\n' ${shellEscape(config.password)} | sudo -S ${cmd}`;
 }
 
 function uploadDir(sftp, localDir, remoteDir) {
@@ -71,6 +84,12 @@ const conn = new Client();
 conn.on('ready', async () => {
   console.log('Connected to server');
   try {
+    console.log('\n[0] Preparing remote directory...');
+    await runCommand(
+      conn,
+      `${sudoCommand(`mkdir -p ${shellEscape(REMOTE_DIR)}`)} && ${sudoCommand(`chown -R ${shellEscape(config.username)}:${shellEscape(config.username)} ${shellEscape(REMOTE_DIR)}`)}`
+    );
+
     console.log('\n[1] Uploading build files...');
     await new Promise((resolve, reject) => {
       conn.sftp(async (err, sftp) => {
@@ -83,10 +102,10 @@ conn.on('ready', async () => {
     });
 
     console.log('\n[2] Restarting nginx...');
-    await runCommand(conn, 'systemctl restart nginx');
+    await runCommand(conn, sudoCommand('systemctl restart nginx'));
 
     console.log('\n✓ Deployment complete!');
-    console.log(`  Site: http://47.86.30.22`);
+    console.log(`  Site: http://${config.host}`);
   } catch (err) {
     console.error('Deployment failed:', err.message);
     process.exit(1);

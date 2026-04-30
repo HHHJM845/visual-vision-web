@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EmptyState, ErrorState, PageLoading, PermissionState } from "@/components/StateViews";
 import { useAuth } from "@/contexts/AuthContext";
-import { getApplicationsByAuthor, getCommissionsByAuthor } from "@/services/commissionService";
+import { getApplicationsByAuthor, getCommissionsByAuthor, getProjectProgress, projectStages } from "@/services/commissionService";
 import { Application, Commission } from "@/types/commission";
 
 function statusLabel(c: Commission, applications: Application[]) {
@@ -37,6 +37,20 @@ export default function DashboardClient() {
 
   if (!user) {
     return <div className="min-h-screen bg-muted"><Navbar /><PermissionState title="请先登录" description="登录后可以查看你的项目工作台。" actionLabel="去登录" onAction={() => navigate('/login')} /></div>;
+  }
+
+  if (user.role !== "client") {
+    return (
+      <div className="min-h-screen bg-muted">
+        <Navbar />
+        <PermissionState
+          title="这是需求方工作台"
+          description="当前账号是创作者身份，请前往创作者工作台查看应征项目、作品集和交付节点。"
+          actionLabel="前往创作者工作台"
+          onAction={() => navigate("/dashboard/aigcer")}
+        />
+      </div>
+    );
   }
   const stats = {
     total: commissions.length,
@@ -72,12 +86,17 @@ export default function DashboardClient() {
       <div className="space-y-3">
         {items.map(c => {
           const s = statusLabel(c, applications);
+          const accepted = applications.some((application) => application.commissionId === c.id && application.status === "accepted");
+          const stage = accepted ? projectStages.find((item) => item.id === getProjectProgress(c.id).currentStage) : null;
           return (
             <div key={c.id} onClick={() => navigate(`/commissions/${c.id}`)}
               className="flex cursor-pointer items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:bg-muted">
               <div className="flex-1">
                 <p className="font-medium text-foreground">{c.title}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{c.priceRange} · 截止 {c.deadline} · 应征 {c.applicants} 人</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {c.priceRange} · 截止 {c.deadline} · 应征 {c.applicants} 人
+                  {stage ? ` · 当前节点：${stage.label}` : ""}
+                </p>
               </div>
               <span className={`rounded-full px-2 py-1 text-xs font-medium ${s.class}`}>{s.label}</span>
             </div>

@@ -36,6 +36,7 @@ import {
   updateApplicationStatus,
   withdrawApplication,
 } from "@/services/commissionService";
+import { createProjectNotification } from "@/services/engagementService";
 import { useSmartMatch } from "@/hooks/useSmartMatch";
 
 export default function CommissionDetail() {
@@ -133,6 +134,11 @@ export default function CommissionDetail() {
     try {
       await applyToCommission(commission.id, user.id, user.nickname, applyMessage.trim(), expectedPrice.trim());
       toast({ title: "应征成功", description: "需求方会在项目工作台查看你的应征信息。" });
+      createProjectNotification({
+        title: "项目应征已提交",
+        description: `你已应征「${commission.title}」，后续筛选结果会同步到项目详情和工作台。`,
+        targetPath: `/commissions/${commission.id}`,
+      });
       setApplyOpen(false);
       setApplyMessage("");
       setExpectedPrice("");
@@ -156,6 +162,14 @@ export default function CommissionDetail() {
       toast({
         title: status === 'accepted' ? '已选定创作者' : '已拒绝应征',
         description: status === 'accepted' ? '项目已进入合作中，双方工作台会同步状态。' : '该应征已从候选列表中移出。',
+      });
+      const applicant = applicants.find((item) => item.id === applicationId);
+      createProjectNotification({
+        title: status === 'accepted' ? "合作已选定" : "应征状态已更新",
+        description: status === 'accepted'
+          ? `「${commission.title}」已选定 ${applicant?.aigcerNickname ?? "创作者"}，可以开始推进交付节点。`
+          : `「${commission.title}」的一条应征已被拒绝。`,
+        targetPath: `/commissions/${commission.id}`,
       });
       setSelectedApplicantId(null);
     await Promise.all([
@@ -260,6 +274,11 @@ export default function CommissionDetail() {
     toast({
       title: stage?.id === 'delivered' ? '项目已完成交付' : `已推进到${stage?.label ?? '下一阶段'}`,
       description: isProjectOwner ? '节点状态已同步到项目详情。' : '需求方可以继续确认下一步交付节点。',
+    });
+    createProjectNotification({
+      title: stage?.id === 'delivered' ? "项目已完成交付" : `项目推进到${stage?.label ?? "下一阶段"}`,
+      description: `「${commission.title}」当前节点已更新，双方可在项目详情继续查看交付进度。`,
+      targetPath: `/commissions/${commission.id}`,
     });
   }
 

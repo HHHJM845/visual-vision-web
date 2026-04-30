@@ -67,11 +67,17 @@ export default function Navbar() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => navigate('/dashboard/client')}>
-                需求方工作台
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/dashboard/aigcer')}>
-                创作者工作台
+              {user.role === 'client' ? (
+                <DropdownMenuItem onClick={() => navigate('/dashboard/client')}>
+                  需求方工作台
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={() => navigate('/dashboard/aigcer')}>
+                  创作者工作台
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => navigate(user.role === 'client' ? '/commissions/new' : '/commissions')}>
+                {user.role === 'client' ? '发布新项目' : '去找项目'}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => { logout(); navigate('/'); }}

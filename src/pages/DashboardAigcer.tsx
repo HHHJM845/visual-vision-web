@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { EmptyState, ErrorState, PageLoading, PermissionState } from "@/components/StateViews";
 import { useAuth } from "@/contexts/AuthContext";
-import { getApplicationsByAigcer, getCommissionById } from "@/services/commissionService";
+import { getApplicationsByAigcer, getCommissionById, getProjectProgress, projectStages } from "@/services/commissionService";
 import { Application, Commission } from "@/types/commission";
 
 interface AppWithCommission {
@@ -33,8 +33,12 @@ export default function DashboardAigcer() {
     let cancelled = false;
 
     async function load() {
-      if (!canLoadApplications || applications.length === 0) {
-        setAppDetails([]);
+      if (!canLoadApplications) {
+        return;
+      }
+
+      if (applications.length === 0) {
+        setAppDetails((current) => current.length ? [] : current);
         return;
       }
 
@@ -77,6 +81,20 @@ export default function DashboardAigcer() {
     );
   }
 
+  if (user.role !== "aigcer") {
+    return (
+      <div className="min-h-screen bg-muted">
+        <Navbar />
+        <PermissionState
+          title="这是创作者工作台"
+          description="当前账号是需求方身份，请前往需求方工作台管理发布、应征和验收流程。"
+          actionLabel="前往需求方工作台"
+          onAction={() => navigate("/dashboard/client")}
+        />
+      </div>
+    );
+  }
+
   const stats = {
     applying: applications.filter((app) => app.status === "pending").length,
     ongoing: applications.filter((app) => app.status === "accepted").length,
@@ -84,7 +102,10 @@ export default function DashboardAigcer() {
     income: 0,
   };
 
-  const milestones = ["开始合作", "概念稿", "分镜", "粗剪", "确认交付"];
+  function progressFor(commissionId: number) {
+    const progress = getProjectProgress(commissionId);
+    return projectStages.find((stage) => stage.id === progress.currentStage) ?? projectStages[0];
+  }
 
   return (
     <div className="min-h-screen bg-muted">
@@ -177,8 +198,15 @@ export default function DashboardAigcer() {
                       </span>
                       {app.status === "accepted" && (
                         <div className="mt-3">
-                          <Progress value={20} className="h-1.5" />
-                          <p className="text-xs text-muted-foreground mt-1">{milestones[1]} 阶段</p>
+                          {(() => {
+                            const stage = progressFor(app.commissionId);
+                            return (
+                              <>
+                                <Progress value={stage.percent} className="h-1.5" />
+                                <p className="text-xs text-muted-foreground mt-1">{stage.label} 阶段</p>
+                              </>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
@@ -200,8 +228,8 @@ export default function DashboardAigcer() {
                 <EmptyState
                   title={user.verificationStatus === "none" ? "还没有完成作品集认证" : "暂无作品"}
                   description="作品集会帮助需求方判断你的风格匹配度。"
-                  actionLabel={user.verificationStatus === "none" ? "完成认证并上传作品集" : undefined}
-                  onAction={user.verificationStatus === "none" ? () => navigate("/onboarding/aigcer") : undefined}
+                  actionLabel={user.verificationStatus === "none" ? "完成认证并上传作品集" : "补充作品集"}
+                  onAction={() => navigate("/onboarding/aigcer")}
                 />
               )}
             </TabsContent>

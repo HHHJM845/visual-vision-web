@@ -1,4 +1,4 @@
-export type NotificationType = "showcase-intent" | "event-registration";
+export type NotificationType = "showcase-intent" | "event-registration" | "project-update";
 
 export interface NotificationItem {
   id: string;
@@ -31,6 +31,12 @@ export interface EventRegistration {
   workTitle?: string;
   status: "registered";
   createdAt: string;
+}
+
+export interface ProjectNotificationParams {
+  title: string;
+  description: string;
+  targetPath: string;
 }
 
 const INTENTS_KEY = "visionai.showcaseIntents";
@@ -141,6 +147,15 @@ export function createEventRegistration(params: {
     targetPath: "/events",
   });
   return registration;
+}
+
+export function createProjectNotification(params: ProjectNotificationParams) {
+  return createNotification({
+    type: "project-update",
+    title: params.title,
+    description: params.description,
+    targetPath: params.targetPath,
+  });
 }
 
 export function listShowcaseIntents() {

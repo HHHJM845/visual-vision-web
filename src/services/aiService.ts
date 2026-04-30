@@ -39,6 +39,25 @@ export type ApplicantInput = {
   tools: string[];
 };
 
+function fallbackApplicantScores(
+  commissionDescription: string,
+  category: string,
+  applicants: ApplicantInput[]
+) {
+  const demandText = `${commissionDescription} ${category}`.toLowerCase();
+  return applicants.map((applicant) => {
+    const styleHits = applicant.styles.filter((style) => demandText.includes(style.toLowerCase())).length;
+    const toolHits = applicant.tools.filter((tool) => demandText.includes(tool.toLowerCase())).length;
+    const bioHits = applicant.bio
+      .split(/[，。,.、\s]+/)
+      .filter((token) => token.length >= 2 && demandText.includes(token.toLowerCase()))
+      .length;
+    const profileCompleteness = Math.min(12, applicant.styles.length * 2 + applicant.tools.length * 2 + (applicant.bio ? 4 : 0));
+    const score = Math.min(96, 58 + styleHits * 12 + toolHits * 8 + bioHits * 4 + profileCompleteness);
+    return { id: applicant.id, score };
+  }).sort((a, b) => b.score - a.score);
+}
+
 export async function matchApplicants(
   commissionDescription: string,
   category: string,
@@ -57,7 +76,18 @@ ${JSON.stringify(applicants)}
 请为每个应征者打一个匹配度分数（0-100的整数），基于其风格、工具与委托需求的契合程度。
 只输出 JSON 数组，格式：[{"id": "...", "score": 85}, ...]
 不要有任何其他文字。`;
-  const raw = await callDeepSeek([{ role: 'user', content }], 0.1);
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-  return JSON.parse(cleaned) as { id: string; score: number }[];
+  let raw: string;
+  try {
+    raw = await callDeepSeek([{ role: 'user', content }], 0.1);
+  } catch {
+    return fallbackApplicantScores(commissionDescription, category, applicants);
+  }
+
+  try {
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    return JSON.parse(cleaned) as { id: string; score: number }[];
+  } catch (error) {
+    if (applicants.length) return fallbackApplicantScores(commissionDescription, category, applicants);
+    throw error;
+  }
 }

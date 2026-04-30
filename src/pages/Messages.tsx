@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Bell, CalendarDays, CheckCircle2, MessageSquare, ShoppingBag } from "lucide-react";
+import { Bell, CalendarDays, CheckCircle2, Film, ShoppingBag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import { PageHero, PageShell, SectionTitle } from "@/components/PageChrome";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 const noticeIconMap: Record<NotificationItem["type"], typeof ShoppingBag> = {
   "showcase-intent": ShoppingBag,
   "event-registration": CalendarDays,
+  "project-update": Film,
 };
 
 function formatTime(value: string) {
@@ -37,9 +38,11 @@ const Messages = () => {
   const unreadCount = notifications.filter((item) => !item.read).length;
 
   function handleRead(item: NotificationItem) {
-    if (item.read) return;
-    markNotificationRead(item.id);
-    setNotifications(listNotifications());
+    if (!item.read) {
+      markNotificationRead(item.id);
+      setNotifications(listNotifications());
+    }
+    if (item.targetPath) navigate(item.targetPath);
   }
 
   return (

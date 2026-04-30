@@ -21,11 +21,14 @@ const schema = z.object({
   title: z.string().min(5, "标题至少5个字"),
   description: z.string().min(20, "描述至少20个字"),
   category: z.string().min(1, "请选择类别"),
-  priceMin: z.string().min(1, "请填写最低报酬"),
-  priceMax: z.string().min(1, "请填写最高报酬"),
+  priceMin: z.string().min(1, "请填写最低报酬").regex(/^\d+$/, "请输入数字金额"),
+  priceMax: z.string().min(1, "请填写最高报酬").regex(/^\d+$/, "请输入数字金额"),
   deadline: z.string().min(1, "请选择截止日期"),
   purpose: z.enum(["商业用途", "个人用途"]),
   format: z.string().optional(),
+}).refine((data) => Number(data.priceMax) >= Number(data.priceMin), {
+  message: "最高报酬不能低于最低报酬",
+  path: ["priceMax"],
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -101,6 +104,15 @@ export default function CommissionNew() {
       <div className="min-h-screen bg-muted">
         <Navbar />
         <PermissionState title="请先登录" description="发布需求需要登录需求方账号。" actionLabel="去登录" onAction={() => navigate('/login')} />
+      </div>
+    );
+  }
+
+  if (user.role !== 'client') {
+    return (
+      <div className="min-h-screen bg-muted">
+        <Navbar />
+        <PermissionState title="仅需求方可发布项目" description="当前账号是创作者身份，可以去项目广场寻找并应征合适的需求。" actionLabel="去项目广场" onAction={() => navigate('/commissions')} />
       </div>
     );
   }

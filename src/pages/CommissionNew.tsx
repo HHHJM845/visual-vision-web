@@ -20,7 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 const schema = z.object({
   title: z.string().min(5, "标题至少5个字"),
   description: z.string().min(20, "描述至少20个字"),
-  category: z.string().min(1, "请选择类别"),
+  category: z.string({ required_error: "请选择类别" }).min(1, "请选择类别"),
   priceMin: z.string().min(1, "请填写最低报酬").regex(/^\d+$/, "请输入数字金额"),
   priceMax: z.string().min(1, "请填写最高报酬").regex(/^\d+$/, "请输入数字金额"),
   deadline: z.string().min(1, "请选择截止日期"),
@@ -78,7 +78,7 @@ export default function CommissionNew() {
     const authorVerification = user!.clientVerificationType === 'enterprise' ? 'enterprise' as const : 'realname' as const;
 
     try {
-      const commission = await createCommission({
+      await createCommission({
         title: data.title,
         description: data.description,
         category: data.category,
@@ -91,9 +91,10 @@ export default function CommissionNew() {
         authorId: user!.id,
         authorNickname: user!.nickname,
         authorVerification,
+        status: 'pending_review',
       });
-      toast({ title: "项目已发布", description: "AIGCer 现在可以在项目广场看到这条需求。" });
-      navigate(`/commissions/${commission.id}`);
+      toast({ title: "项目已提交审核", description: "管理员通过后，AIGCer 才能在项目广场看到这条需求。" });
+      navigate(`/dashboard/client`);
     } catch (e: unknown) {
       setSubmitError(e instanceof Error ? e.message : "发布失败，请稍后重试");
     }
@@ -161,7 +162,7 @@ export default function CommissionNew() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>影片类别</Label>
-                <Select onValueChange={v => setValue("category", v)}>
+                <Select onValueChange={v => setValue("category", v, { shouldValidate: true })}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="请选择" /></SelectTrigger>
                   <SelectContent>
                     {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}

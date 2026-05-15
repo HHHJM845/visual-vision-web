@@ -20,6 +20,11 @@ import OnboardingAigcer from "./pages/OnboardingAigcer";
 import OnboardingClient from "./pages/OnboardingClient";
 import DashboardClient from "./pages/DashboardClient";
 import DashboardAigcer from "./pages/DashboardAigcer";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminReviews from "./pages/admin/AdminReviews";
+import AdminReviewDetail from "./pages/admin/AdminReviewDetail";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminAuditLog from "./pages/admin/AdminAuditLog";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -39,6 +44,11 @@ const App = () => (
             <Route path="/onboarding/client" element={<OnboardingClient />} />
             <Route path="/dashboard/client" element={<DashboardClient />} />
             <Route path="/dashboard/aigcer" element={<DashboardAigcer />} />
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/verifications" element={<AdminReviews />} />
+            <Route path="/admin/verifications/:id" element={<AdminReviewDetail />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/audit-log" element={<AdminAuditLog />} />
             <Route path="/commissions" element={<Commissions />} />
             <Route path="/commissions/new" element={<CommissionNew />} />
             <Route path="/commissions/:id/edit" element={<CommissionEdit />} />

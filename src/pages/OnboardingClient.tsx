@@ -34,9 +34,9 @@ export default function OnboardingClient() {
 
     setSubmitting(true);
     try {
-      const updated = await updateVerificationStatus(user.id, "verified", "realname");
+      const updated = await updateVerificationStatus(user.id, "pending", "realname");
       setUser(updated);
-      toast({ title: "认证通过", description: "现在可以发布项目并管理应征了。" });
+      toast({ title: "认证已提交", description: "管理员审核通过后即可发布项目。" });
       navigate("/dashboard/client", { replace: true });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "认证失败，请稍后重试");
@@ -53,9 +53,9 @@ export default function OnboardingClient() {
 
     setSubmitting(true);
     try {
-      const updated = await updateVerificationStatus(user.id, "verified", "enterprise");
+      const updated = await updateVerificationStatus(user.id, "pending", "enterprise");
       setUser(updated);
-      toast({ title: "企业认证通过", description: "你的项目会展示企业认证标签。" });
+      toast({ title: "企业认证已提交", description: "管理员审核通过后，你的项目会展示企业认证标签。" });
       navigate("/dashboard/client", { replace: true });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "认证失败，请稍后重试");

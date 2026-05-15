@@ -1,11 +1,14 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu, DropdownMenuContent,
-  DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { assetUrl } from "@/lib/assets";
+import { User } from "@/types/user";
 
 const navItems = [
   { label: "项目", path: "/commissions" },
@@ -16,23 +19,28 @@ const navItems = [
   { label: "App", path: "/app" },
 ];
 
-const verificationLabel: Record<string, string> = {
-  none: "未认证",
-  pending: "审核中",
-  verified: "已认证",
-};
+function roleBadge(user: User) {
+  if (user.role === "admin") return "管理员";
+  if (user.verificationStatus === "pending") return "审核中";
+  if (user.verificationStatus === "rejected") return "已驳回";
+  if (user.verificationStatus === "needs_changes") return "需补充";
+  if (user.verificationStatus !== "verified") return null;
+  if (user.clientVerificationType === "enterprise") return "企业认证";
+  return user.role === "client" ? "实名认证" : "已认证";
+}
 
 export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const badge = user ? roleBadge(user) : null;
 
   return (
-    <nav className="h-[var(--nav-height)] flex items-center px-6 bg-background border-b border-border sticky top-0 z-50">
-      <Link to="/" className="flex items-center gap-2 mr-8">
-        <img src={assetUrl("logo.webp")} alt="跃然承制" className="w-8 h-8 object-contain" />
+    <nav className="sticky top-0 z-50 flex h-[var(--nav-height)] items-center border-b border-border bg-background px-6">
+      <Link to="/" className="mr-8 flex items-center gap-2">
+        <img src={assetUrl("logo.webp")} alt="跃然承制" className="h-8 w-8 object-contain" />
         <span className="text-xl font-bold text-primary">跃然承制</span>
-        <span className="text-xs text-muted-foreground tracking-wider">VISIONAI.COM</span>
+        <span className="text-xs tracking-wider text-muted-foreground">VISIONAI.COM</span>
       </Link>
 
       <div className="flex items-center gap-6">
@@ -53,34 +61,39 @@ export default function Navbar() {
         {user ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold">
+              <button className="flex items-center gap-2 transition-opacity hover:opacity-80">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
                   {user.nickname.charAt(0)}
                 </div>
-                <span className="text-sm text-foreground hidden sm:inline">{user.nickname}</span>
-                {user.verificationStatus === 'verified' && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-tag-enterprise text-primary-foreground">
-                    {user.clientVerificationType === 'enterprise' ? '企业认证' :
-                     user.role === 'client' ? '实名认证' : '已认证'}
+                <span className="hidden text-sm text-foreground sm:inline">{user.nickname}</span>
+                {badge && (
+                  <span className="rounded-full bg-tag-enterprise px-2 py-0.5 text-xs text-primary-foreground">
+                    {badge}
                   </span>
                 )}
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {user.role === 'client' ? (
-                <DropdownMenuItem onClick={() => navigate('/dashboard/client')}>
+              {user.role === "admin" ? (
+                <DropdownMenuItem onClick={() => navigate("/admin")}>
+                  管理员后台
+                </DropdownMenuItem>
+              ) : user.role === "client" ? (
+                <DropdownMenuItem onClick={() => navigate("/dashboard/client")}>
                   需求方工作台
                 </DropdownMenuItem>
               ) : (
-                <DropdownMenuItem onClick={() => navigate('/dashboard/aigcer')}>
+                <DropdownMenuItem onClick={() => navigate("/dashboard/aigcer")}>
                   创作者工作台
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={() => navigate(user.role === 'client' ? '/commissions/new' : '/commissions')}>
-                {user.role === 'client' ? '发布新项目' : '去找项目'}
-              </DropdownMenuItem>
+              {user.role !== "admin" && (
+                <DropdownMenuItem onClick={() => navigate(user.role === "client" ? "/commissions/new" : "/commissions")}>
+                  {user.role === "client" ? "发布新项目" : "去找项目"}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
-                onClick={() => { logout(); navigate('/'); }}
+                onClick={() => { logout(); navigate("/"); }}
                 className="text-destructive"
               >
                 退出登录
@@ -89,8 +102,8 @@ export default function Navbar() {
           </DropdownMenu>
         ) : (
           <>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/login')}>登录</Button>
-            <Button size="sm" onClick={() => navigate('/register')}>注册</Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/login")}>登录</Button>
+            <Button size="sm" onClick={() => navigate("/register")}>注册</Button>
           </>
         )}
       </div>

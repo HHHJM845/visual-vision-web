@@ -91,12 +91,12 @@ export default function OnboardingAigcer() {
       };
 
       const savedUser = await saveAigcerProfile(user.id, profile);
-      const verifiedUser = await updateVerificationStatus(user.id, "verified");
+      const verifiedUser = await updateVerificationStatus(user.id, "pending");
       setUser({
         ...verifiedUser,
         aigcerProfile: savedUser.aigcerProfile ?? profile,
       });
-      toast({ title: "认证通过", description: "作品集已同步到创作者工作台。" });
+      toast({ title: "认证已提交", description: "管理员审核通过后即可应征项目。" });
       navigate("/dashboard/aigcer?tab=portfolio", { replace: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "提交审核失败，请稍后重试");

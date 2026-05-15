@@ -29,7 +29,12 @@ export default function Commissions() {
     queryFn: getCommissions,
   });
 
-  const canPost = !!user && user.verificationStatus === 'verified';
+  const canPost = !!user && user.role === 'client' && user.verificationStatus === 'verified';
+
+  const publicCommissions = useMemo(() => {
+    const now = Date.now();
+    return commissions.filter((item) => (item.status ?? 'open') === 'open' && new Date(item.deadline).getTime() >= now);
+  }, [commissions]);
 
   const filtered = useMemo(() => {
     const now = Date.now();
@@ -39,7 +44,7 @@ export default function Commissions() {
       return Math.max(...nums, 0);
     };
 
-    return commissions
+    return publicCommissions
       .filter((item) => item.purpose === purpose)
       .filter((item) => category === "全部" || item.category === category)
       .filter((item) => {
@@ -64,7 +69,7 @@ export default function Commissions() {
         if (sort === "budget") return normalizePrice(b.priceRange) - normalizePrice(a.priceRange);
         return b.id - a.id;
       });
-  }, [budget, category, commissions, deadline, keyword, purpose, sort]);
+  }, [budget, category, deadline, keyword, publicCommissions, purpose, sort]);
 
   function resetFilters() {
     setPurpose("商业用途");
@@ -83,9 +88,9 @@ export default function Commissions() {
         title="找到正在招募的 AI 影片项目"
         description="按用途、预算、交付日期和影片类别筛选需求，快速判断是否适合应征。"
         stats={[
-          { label: "开放项目", value: commissions.length },
+          { label: "开放项目", value: publicCommissions.length },
           { label: "当前结果", value: filtered.length },
-          { label: "已应征", value: commissions.reduce((sum, item) => sum + item.applicants, 0) },
+          { label: "已应征", value: publicCommissions.reduce((sum, item) => sum + item.applicants, 0) },
         ]}
         actions={
           <>
@@ -140,7 +145,7 @@ export default function Commissions() {
           <CardGridSkeleton count={6} />
         ) : isError ? (
           <ErrorState onAction={() => refetch()} />
-        ) : commissions.length === 0 ? (
+        ) : publicCommissions.length === 0 ? (
           <EmptyState title="还没有可应征项目" description="项目发布后会出现在这里，需求方可先完成认证并创建第一条需求。" actionLabel={canPost ? "发布项目" : undefined} onAction={canPost ? () => navigate('/commissions/new') : undefined} />
         ) : filtered.length === 0 ? (
           <SearchEmptyState onReset={resetFilters} />

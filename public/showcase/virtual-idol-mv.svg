@@ -1,0 +1,14 @@
+<svg width="960" height="720" viewBox="0 0 960 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="720" fill="#FDF2F8"/>
+  <rect x="96" y="80" width="768" height="560" rx="36" fill="#FFFFFF"/>
+  <path d="M96 456C208 390 326 386 448 444C574 504 706 498 864 410V640H96V456Z" fill="#FCE7F3"/>
+  <rect x="164" y="166" width="632" height="330" rx="28" fill="#111827"/>
+  <path d="M196 440C294 330 386 308 478 374C574 443 664 420 764 292V496H196V440Z" fill="#7C3AED"/>
+  <circle cx="480" cy="286" r="74" fill="#F9A8D4"/>
+  <path d="M418 288C430 232 462 208 506 214C544 220 568 248 578 286C536 258 482 250 418 288Z" fill="#111827"/>
+  <path d="M394 470C402 382 432 336 480 336C528 336 558 382 566 470H394Z" fill="#FDF2F8"/>
+  <rect x="250" y="552" width="126" height="18" rx="9" fill="#EC4899"/>
+  <rect x="416" y="552" width="126" height="18" rx="9" fill="#8B5CF6"/>
+  <rect x="582" y="552" width="126" height="18" rx="9" fill="#06B6D4"/>
+  <path d="M728 152L750 196L798 202L764 235L772 282L728 260L686 282L694 235L660 202L706 196L728 152Z" fill="#FACC15"/>
+</svg>

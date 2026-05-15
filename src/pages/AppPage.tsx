@@ -19,7 +19,7 @@ const screenCards = [
 const AppPage = () => {
   const { toast } = useToast();
   const handleDownload = (platform: string) => {
-    toast({ title: `${platform}下载已开始`, description: "当前为演示包，正式上线后会跳转到对应应用市场。" });
+    toast({ title: `${platform}即将开放`, description: "当前为产品展示入口，正式上线后会跳转到对应应用市场。" });
   };
 
   return (

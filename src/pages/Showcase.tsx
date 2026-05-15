@@ -17,6 +17,13 @@ const categories = ["全部类型", "宣传片", "短视频", "概念影像", "�
 
 const iconMap = [Film, Sparkles, Clock3, BadgeCheck, MessageSquare];
 
+const upcomingItems = [
+  { title: "机甲概念影像", imageUrl: "/showcase/mecha-concept.svg" },
+  { title: "动态光效特效短片", imageUrl: "/showcase/light-fx.svg" },
+  { title: "虚拟偶像宣传MV", imageUrl: "/showcase/virtual-idol-mv.svg" },
+  { title: "AI写实人物短片", imageUrl: "/showcase/realistic-human.svg" },
+];
+
 const ShowcaseCard = ({ item, index, onOpen }: { item: typeof showcaseItems[number]; index: number; onOpen: () => void }) => {
   const Icon = iconMap[index % iconMap.length];
   return (
@@ -25,9 +32,10 @@ const ShowcaseCard = ({ item, index, onOpen }: { item: typeof showcaseItems[numb
       onClick={onOpen}
       className="group grid min-h-64 cursor-pointer overflow-hidden rounded-2xl border border-border bg-card text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-xl"
     >
-      <div className="relative flex aspect-[4/3] items-center justify-center bg-[radial-gradient(circle_at_30%_25%,hsl(var(--primary)/0.18),transparent_16rem),hsl(var(--accent))]">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-background/90 text-primary shadow-sm">
-          <Icon className="h-8 w-8" />
+      <div className="relative aspect-[4/3] overflow-hidden bg-accent">
+        <img src={item.imageUrl} alt={item.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+        <div className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-xl bg-background/90 text-primary shadow-sm backdrop-blur">
+          <Icon className="h-5 w-5" />
         </div>
         {item.tag && <span className="absolute left-3 top-3 rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground">{item.tag}</span>}
         {item.sold != null && <span className="absolute bottom-3 right-3 rounded-full bg-foreground px-2.5 py-1 text-xs text-background">已售 {item.sold}</span>}
@@ -149,15 +157,20 @@ const Showcase = () => {
             <section>
               <SectionTitle title="即将上架" description="预留需求方向，后续可直接转为服务包。" />
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {["机甲概念影像", "动态光效特效短片", "虚拟偶像宣传MV", "AI写实人物短片"].map((title, index) => {
+                {upcomingItems.map((item, index) => {
                   const Icon = iconMap[(index + 1) % iconMap.length];
                   return (
-                    <div key={title} className="rounded-2xl border border-dashed border-border bg-card/70 p-5">
-                      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-primary">
-                        <Icon className="h-6 w-6" />
+                    <div key={item.title} className="overflow-hidden rounded-2xl border border-dashed border-border bg-card/70">
+                      <div className="relative aspect-[4/3] bg-accent">
+                        <img src={item.imageUrl} alt={item.title} className="h-full w-full object-cover opacity-90" />
+                        <div className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-xl bg-background/90 text-primary shadow-sm backdrop-blur">
+                          <Icon className="h-5 w-5" />
+                        </div>
                       </div>
-                      <p className="font-semibold text-card-foreground">{title}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">开放预约中</p>
+                      <div className="p-5">
+                        <p className="font-semibold text-card-foreground">{item.title}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">开放预约中</p>
+                      </div>
                     </div>
                   );
                 })}
@@ -194,11 +207,11 @@ const Showcase = () => {
                 </>
               ) : (
                 <>
-                  <div className="rounded-2xl border border-border bg-accent/60 p-6">
-                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-background text-primary shadow-sm">
-                      <Film className="h-7 w-7" />
-                    </div>
+                  <div className="overflow-hidden rounded-2xl border border-border bg-accent/60">
+                    <img src={selected.imageUrl} alt={selected.title} className="aspect-[16/9] w-full object-cover" />
+                    <div className="p-5">
                     <p className="text-sm text-muted-foreground">由 {selected.author} 提供，{selected.delivery}。</p>
+                    </div>
                   </div>
                   <div className="grid gap-3 text-sm sm:grid-cols-2">
                     <div><span className="text-muted-foreground">创作者：</span>{selected.author}</div>

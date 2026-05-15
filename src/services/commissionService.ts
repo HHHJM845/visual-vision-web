@@ -1,27 +1,67 @@
 // src/services/commissionService.ts
 import { supabase } from '@/lib/supabase';
-import { Commission, Application } from '@/types/commission';
+import { Commission, Application, DeliverySubmission, ProjectDispute } from '@/types/commission';
 import { demoApplications, demoCommissions, demoUsers } from '@/data/mockData';
 
 const COMMISSIONS_KEY = 'visionai.commissions';
 const APPLICATIONS_KEY = 'visionai.applications';
 const PROJECT_PROGRESS_KEY = 'visionai.projectProgress';
+const PROJECT_DELIVERIES_KEY = 'visionai.projectDeliveries';
+const PROJECT_DISPUTES_KEY = 'visionai.projectDisputes';
 const isSupabaseConfigured = !String(import.meta.env.VITE_SUPABASE_URL || '').includes('placeholder');
 
 export const projectStages = [
-  { id: 'kickoff', label: '开始合作', percent: 0, ownerAction: '确认启动', aigcerAction: '查看需求' },
-  { id: 'concept', label: '概念稿', percent: 20, ownerAction: '确认概念稿', aigcerAction: '提交概念稿' },
-  { id: 'storyboard', label: '分镜', percent: 40, ownerAction: '确认分镜', aigcerAction: '提交分镜' },
-  { id: 'roughCut', label: '粗剪', percent: 70, ownerAction: '确认粗剪', aigcerAction: '提交粗剪' },
-  { id: 'delivered', label: '确认交付', percent: 100, ownerAction: '完成验收', aigcerAction: '查看验收' },
+  { id: 'script', label: '脚本提报及反馈和确认', percent: 8, ownerAction: '确认脚本', aigcerAction: '提交脚本' },
+  { id: 'style', label: '风格提报及确认', percent: 16, ownerAction: '确认风格', aigcerAction: '提交风格方案' },
+  { id: 'setup', label: '前期人设场景提报及确认', percent: 24, ownerAction: '确认人设场景', aigcerAction: '提交人设场景' },
+  { id: 'storyboard', label: '分镜提报及确认', percent: 32, ownerAction: '确认分镜', aigcerAction: '提交分镜' },
+  { id: 'generation', label: '视频生成及剪辑', percent: 44, ownerAction: '确认生成剪辑', aigcerAction: '提交生成剪辑版' },
+  { id: 'acopy', label: 'A copy', percent: 56, ownerAction: '确认 A copy', aigcerAction: '提交 A copy' },
+  { id: 'acoRevision', label: 'Aco反馈及修改', percent: 68, ownerAction: '确认 Aco 修改', aigcerAction: '提交 Aco 修改版' },
+  { id: 'bcopy', label: 'B copy', percent: 78, ownerAction: '确认 B copy', aigcerAction: '提交 B copy' },
+  { id: 'bcoConfirm', label: 'Bco反馈及确认', percent: 88, ownerAction: '确认 Bco', aigcerAction: '提交 Bco 确认版' },
+  { id: 'finalDelivery', label: '成片交付', percent: 96, ownerAction: '确认成片', aigcerAction: '提交成片' },
+  { id: 'online', label: '上线', percent: 100, ownerAction: '确认上线', aigcerAction: '提交上线资料' },
 ] as const;
 
 export type ProjectStageId = typeof projectStages[number]['id'];
+export type ProjectStageStatus = 'waiting_aigcer' | 'waiting_owner' | 'completed';
 
 export interface ProjectProgress {
   commissionId: number;
   currentStage: ProjectStageId;
+  stageStatus: ProjectStageStatus;
+  activeDeliveryId?: string;
+  revisionCount?: number;
+  submittedAt?: string;
+  confirmedAt?: string;
   updatedAt: string;
+}
+
+export interface StageSubmissionInput {
+  title: string;
+  description: string;
+  file?: File | null;
+  submittedById: string;
+  submittedByName: string;
+}
+
+export interface StageChangeRequestInput {
+  feedback: string;
+  requestedById: string;
+}
+
+export interface ProjectDisputeInput {
+  commissionId: number;
+  commissionTitle: string;
+  stageId?: string;
+  stageLabel?: string;
+  applicantId?: string;
+  applicantName?: string;
+  reporterId: string;
+  reporterName: string;
+  reason: string;
+  expectation: string;
 }
 
 function readStored<T>(key: string, fallback: T): T {
@@ -65,31 +105,400 @@ function saveLocalProgress(records: ProjectProgress[]) {
   writeStored(PROJECT_PROGRESS_KEY, records);
 }
 
+function localDeliveries(): DeliverySubmission[] {
+  return readStored<DeliverySubmission[]>(PROJECT_DELIVERIES_KEY, []);
+}
+
+function saveLocalDeliveries(deliveries: DeliverySubmission[]) {
+  writeStored(PROJECT_DELIVERIES_KEY, deliveries);
+}
+
+function localDisputes(): ProjectDispute[] {
+  return readStored<ProjectDispute[]>(PROJECT_DISPUTES_KEY, []);
+}
+
+function saveLocalDisputes(disputes: ProjectDispute[]) {
+  writeStored(PROJECT_DISPUTES_KEY, disputes);
+}
+
 export function getProjectProgress(commissionId: number): ProjectProgress {
   const existing = localProgressRecords().find((item) => item.commissionId === commissionId);
-  return existing ?? {
+  return existing ? {
+    ...existing,
+    stageStatus: existing.stageStatus ?? 'waiting_aigcer',
+    revisionCount: existing.revisionCount ?? 0,
+  } : {
     commissionId,
-    currentStage: 'kickoff',
+    currentStage: 'script',
+    stageStatus: 'waiting_aigcer',
+    revisionCount: 0,
     updatedAt: new Date().toISOString(),
   };
 }
 
-export function advanceProjectProgress(commissionId: number): ProjectProgress {
+function saveProjectProgress(next: ProjectProgress): ProjectProgress {
   const records = localProgressRecords();
+  saveLocalProgress([
+    next,
+    ...records.filter((item) => item.commissionId !== next.commissionId),
+  ]);
+  return next;
+}
+
+function mapProjectProgress(row: Record<string, unknown>): ProjectProgress {
+  return {
+    commissionId: Number(row.commission_id),
+    currentStage: row.current_stage as ProjectStageId,
+    stageStatus: row.stage_status as ProjectStageStatus,
+    activeDeliveryId: row.active_delivery_id as string | undefined,
+    revisionCount: Number(row.revision_count ?? 0),
+    submittedAt: row.submitted_at as string | undefined,
+    confirmedAt: row.confirmed_at as string | undefined,
+    updatedAt: (row.updated_at as string) || new Date().toISOString(),
+  };
+}
+
+function mapDelivery(row: Record<string, unknown>): DeliverySubmission {
+  return {
+    id: row.id as string,
+    commissionId: Number(row.commission_id),
+    stageId: row.stage_id as string,
+    stageLabel: row.stage_label as string,
+    version: Number(row.version ?? 1),
+    title: row.title as string,
+    description: row.description as string,
+    fileName: row.file_name as string | undefined,
+    fileUrl: row.file_url as string | undefined,
+    submittedById: row.submitted_by_id as string,
+    submittedByName: row.submitted_by_name as string,
+    status: row.status as DeliverySubmission['status'],
+    feedback: row.feedback as string | undefined,
+    confirmedById: row.confirmed_by_id as string | undefined,
+    confirmedAt: row.confirmed_at as string | undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
+function mapDispute(row: Record<string, unknown>): ProjectDispute {
+  return {
+    id: row.id as string,
+    commissionId: Number(row.commission_id),
+    commissionTitle: row.commission_title as string,
+    stageId: row.stage_id as string | undefined,
+    stageLabel: row.stage_label as string | undefined,
+    applicantId: row.applicant_id as string | undefined,
+    applicantName: row.applicant_name as string | undefined,
+    reporterId: row.reporter_id as string,
+    reporterName: row.reporter_name as string,
+    reason: row.reason as string,
+    expectation: row.expectation as string,
+    status: row.status as ProjectDispute['status'],
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
+async function saveProgressRemote(next: ProjectProgress): Promise<ProjectProgress> {
+  return withFallback(async () => {
+    const { data, error } = await supabase
+      .from('project_progress')
+      .upsert({
+        commission_id: next.commissionId,
+        current_stage: next.currentStage,
+        stage_status: next.stageStatus,
+        active_delivery_id: next.activeDeliveryId ?? null,
+        revision_count: next.revisionCount ?? 0,
+        submitted_at: next.submittedAt ?? null,
+        confirmed_at: next.confirmedAt ?? null,
+        updated_at: next.updatedAt,
+      }, { onConflict: 'commission_id' })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    const mapped = mapProjectProgress(data);
+    saveProjectProgress(mapped);
+    return mapped;
+  }, () => saveProjectProgress(next));
+}
+
+async function uploadDeliveryFile(commissionId: number, stageId: string, file?: File | null) {
+  if (!file) return { fileName: undefined, fileUrl: undefined };
+  if (!isSupabaseConfigured) {
+    return { fileName: file.name, fileUrl: URL.createObjectURL(file) };
+  }
+  const safeName = file.name.replace(/[^\w.\-\u4e00-\u9fa5]/g, '_');
+  const path = `${commissionId}/${stageId}/${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage.from('project-deliverables').upload(path, file, { upsert: true });
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from('project-deliverables').getPublicUrl(path);
+  return { fileName: file.name, fileUrl: data.publicUrl };
+}
+
+export function submitProjectStage(commissionId: number): ProjectProgress {
+  const current = getProjectProgress(commissionId);
+  if (current.stageStatus !== 'waiting_aigcer') return current;
+  return saveProjectProgress({
+    ...current,
+    stageStatus: 'waiting_owner',
+    submittedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export function confirmProjectStage(commissionId: number): ProjectProgress {
+  const current = getProjectProgress(commissionId);
+  if (current.stageStatus !== 'waiting_owner') return current;
+  const index = projectStages.findIndex((stage) => stage.id === current.currentStage);
+  const isLastStage = index >= projectStages.length - 1;
+  return saveProjectProgress({
+    commissionId,
+    currentStage: isLastStage ? current.currentStage : projectStages[index + 1].id,
+    stageStatus: isLastStage ? 'completed' : 'waiting_aigcer',
+    confirmedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function getProjectDeliveries(commissionId: number): Promise<DeliverySubmission[]> {
+  return withFallback(async () => {
+    const { data, error } = await supabase
+      .from('project_deliverables')
+      .select('*')
+      .eq('commission_id', commissionId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    const rows = (data || []).map(mapDelivery);
+    return rows.length ? rows : localDeliveries().filter((item) => item.commissionId === commissionId);
+  }, () => localDeliveries().filter((item) => item.commissionId === commissionId));
+}
+
+export async function submitProjectStageDelivery(
+  commissionId: number,
+  input: StageSubmissionInput,
+): Promise<{ progress: ProjectProgress; delivery: DeliverySubmission }> {
+  const current = getProjectProgress(commissionId);
+  if (current.stageStatus !== 'waiting_aigcer') {
+    throw new Error('当前节点暂不能提交交付物');
+  }
+  const stage = projectStages.find((item) => item.id === current.currentStage) ?? projectStages[0];
+  const existing = localDeliveries().filter((item) => item.commissionId === commissionId && item.stageId === stage.id);
+  const version = existing.length + 1;
+  const fileInfo = await uploadDeliveryFile(commissionId, stage.id, input.file);
+  const now = new Date().toISOString();
+
+  return withFallback(async () => {
+    const { data, error } = await supabase
+      .from('project_deliverables')
+      .insert({
+        commission_id: commissionId,
+        stage_id: stage.id,
+        stage_label: stage.label,
+        version,
+        title: input.title,
+        description: input.description,
+        file_name: fileInfo.fileName ?? null,
+        file_url: fileInfo.fileUrl ?? null,
+        submitted_by_id: input.submittedById,
+        submitted_by_name: input.submittedByName,
+        status: 'submitted',
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    const delivery = mapDelivery(data);
+    saveLocalDeliveries([delivery, ...localDeliveries().filter((item) => item.id !== delivery.id)]);
+    const progress = await saveProgressRemote({
+      ...current,
+      stageStatus: 'waiting_owner',
+      activeDeliveryId: delivery.id,
+      submittedAt: now,
+      updatedAt: now,
+    });
+    return { progress, delivery };
+  }, () => {
+    const delivery: DeliverySubmission = {
+      id: `delivery-${Date.now()}`,
+      commissionId,
+      stageId: stage.id,
+      stageLabel: stage.label,
+      version,
+      title: input.title,
+      description: input.description,
+      ...fileInfo,
+      submittedById: input.submittedById,
+      submittedByName: input.submittedByName,
+      status: 'submitted',
+      createdAt: now,
+      updatedAt: now,
+    };
+    saveLocalDeliveries([delivery, ...localDeliveries()]);
+    const progress = saveProjectProgress({
+      ...current,
+      stageStatus: 'waiting_owner',
+      activeDeliveryId: delivery.id,
+      submittedAt: now,
+      updatedAt: now,
+    });
+    return { progress, delivery };
+  });
+}
+
+export async function requestProjectStageChanges(
+  commissionId: number,
+  input: StageChangeRequestInput,
+): Promise<ProjectProgress> {
+  const current = getProjectProgress(commissionId);
+  if (current.stageStatus !== 'waiting_owner' || !current.activeDeliveryId) {
+    throw new Error('当前节点没有待反馈的交付物');
+  }
+  const now = new Date().toISOString();
+
+  return withFallback(async () => {
+    const { error } = await supabase
+      .from('project_deliverables')
+      .update({
+        status: 'changes_requested',
+        feedback: input.feedback,
+        updated_at: now,
+      })
+      .eq('id', current.activeDeliveryId);
+    if (error) throw new Error(error.message);
+    const progress = await saveProgressRemote({
+      ...current,
+      stageStatus: 'waiting_aigcer',
+      revisionCount: (current.revisionCount ?? 0) + 1,
+      updatedAt: now,
+    });
+    return progress;
+  }, () => {
+    saveLocalDeliveries(localDeliveries().map((item) => (
+      item.id === current.activeDeliveryId
+        ? { ...item, status: 'changes_requested', feedback: input.feedback, updatedAt: now }
+        : item
+    )));
+    return saveProjectProgress({
+      ...current,
+      stageStatus: 'waiting_aigcer',
+      revisionCount: (current.revisionCount ?? 0) + 1,
+      updatedAt: now,
+    });
+  });
+}
+
+export async function confirmProjectStageDelivery(
+  commissionId: number,
+  confirmedById: string,
+): Promise<ProjectProgress> {
+  const current = getProjectProgress(commissionId);
+  if (current.stageStatus !== 'waiting_owner') return current;
+  const index = projectStages.findIndex((stage) => stage.id === current.currentStage);
+  const isLastStage = index >= projectStages.length - 1;
+  const now = new Date().toISOString();
+
+  return withFallback(async () => {
+    if (current.activeDeliveryId) {
+      const { error } = await supabase
+        .from('project_deliverables')
+        .update({
+          status: 'confirmed',
+          confirmed_by_id: confirmedById,
+          confirmed_at: now,
+          updated_at: now,
+        })
+        .eq('id', current.activeDeliveryId);
+      if (error) throw new Error(error.message);
+    }
+    return saveProgressRemote({
+      commissionId,
+      currentStage: isLastStage ? current.currentStage : projectStages[index + 1].id,
+      stageStatus: isLastStage ? 'completed' : 'waiting_aigcer',
+      activeDeliveryId: undefined,
+      revisionCount: 0,
+      confirmedAt: now,
+      updatedAt: now,
+    });
+  }, () => {
+    if (current.activeDeliveryId) {
+      saveLocalDeliveries(localDeliveries().map((item) => (
+        item.id === current.activeDeliveryId
+          ? { ...item, status: 'confirmed', confirmedById, confirmedAt: now, updatedAt: now }
+          : item
+      )));
+    }
+    return saveProjectProgress({
+      commissionId,
+      currentStage: isLastStage ? current.currentStage : projectStages[index + 1].id,
+      stageStatus: isLastStage ? 'completed' : 'waiting_aigcer',
+      activeDeliveryId: undefined,
+      revisionCount: 0,
+      confirmedAt: now,
+      updatedAt: now,
+    });
+  });
+}
+
+export async function createProjectDispute(input: ProjectDisputeInput): Promise<ProjectDispute> {
+  const now = new Date().toISOString();
+  return withFallback(async () => {
+    const { data, error } = await supabase
+      .from('project_disputes')
+      .insert({
+        commission_id: input.commissionId,
+        commission_title: input.commissionTitle,
+        stage_id: input.stageId ?? null,
+        stage_label: input.stageLabel ?? null,
+        applicant_id: input.applicantId ?? null,
+        applicant_name: input.applicantName ?? null,
+        reporter_id: input.reporterId,
+        reporter_name: input.reporterName,
+        reason: input.reason,
+        expectation: input.expectation,
+        status: 'pending',
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    const dispute = mapDispute(data);
+    saveLocalDisputes([dispute, ...localDisputes().filter((item) => item.id !== dispute.id)]);
+    return dispute;
+  }, () => {
+    const dispute: ProjectDispute = {
+      id: `dispute-${Date.now()}`,
+      ...input,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    };
+    saveLocalDisputes([dispute, ...localDisputes()]);
+    return dispute;
+  });
+}
+
+export async function getProjectDisputes(commissionId: number): Promise<ProjectDispute[]> {
+  return withFallback(async () => {
+    const { data, error } = await supabase
+      .from('project_disputes')
+      .select('*')
+      .eq('commission_id', commissionId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    const rows = (data || []).map(mapDispute);
+    return rows.length ? rows : localDisputes().filter((item) => item.commissionId === commissionId);
+  }, () => localDisputes().filter((item) => item.commissionId === commissionId));
+}
+
+export function advanceProjectProgress(commissionId: number): ProjectProgress {
   const current = getProjectProgress(commissionId);
   const index = projectStages.findIndex((stage) => stage.id === current.currentStage);
   const nextStage = projectStages[Math.min(index + 1, projectStages.length - 1)].id;
   const next: ProjectProgress = {
     commissionId,
     currentStage: nextStage,
+    stageStatus: nextStage === current.currentStage ? 'completed' : 'waiting_aigcer',
     updatedAt: new Date().toISOString(),
   };
-
-  saveLocalProgress([
-    next,
-    ...records.filter((item) => item.commissionId !== commissionId),
-  ]);
-  return next;
+  return saveProjectProgress(next);
 }
 
 async function withFallback<T>(remote: () => Promise<T>, local: () => T | Promise<T>): Promise<T> {

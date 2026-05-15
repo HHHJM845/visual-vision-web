@@ -13,6 +13,8 @@ function statusLabel(c: Commission, applications: Application[]) {
   const now = new Date();
   const deadline = new Date(c.deadline);
   const related = applications.filter((application) => application.commissionId === c.id);
+  if (c.status === 'pending_review') return { label: "审核中", class: "bg-amber-100 text-amber-700" };
+  if (c.status === 'closed') return { label: "已关闭", class: "bg-muted text-muted-foreground" };
   if (related.some((application) => application.status === 'accepted')) return { label: "合作中", class: "bg-yellow-100 text-yellow-700" };
   if (deadline < now) return { label: "已结束", class: "bg-muted text-muted-foreground" };
   if (related.some((application) => application.status === 'pending')) return { label: "待选择", class: "bg-blue-100 text-blue-700" };
@@ -54,7 +56,7 @@ export default function DashboardClient() {
   }
   const stats = {
     total: commissions.length,
-    recruiting: commissions.filter(c => new Date(c.deadline) >= new Date() && !applications.some(app => app.commissionId === c.id && app.status === 'accepted')).length,
+    recruiting: commissions.filter(c => (c.status ?? 'open') === 'open' && new Date(c.deadline) >= new Date() && !applications.some(app => app.commissionId === c.id && app.status === 'accepted')).length,
     ongoing: commissions.filter(c => applications.some(app => app.commissionId === c.id && app.status === 'accepted')).length,
     pending: commissions.filter(c => applications.some(app => app.commissionId === c.id && app.status === 'pending')).length,
   };
@@ -64,7 +66,7 @@ export default function DashboardClient() {
 
   const visibleByTab: Record<string, Commission[]> = {
     all: commissions,
-    recruiting: commissions.filter(c => new Date(c.deadline) >= new Date() && !applications.some(app => app.commissionId === c.id && app.status === 'accepted')),
+    recruiting: commissions.filter(c => (c.status ?? 'open') === 'open' && new Date(c.deadline) >= new Date() && !applications.some(app => app.commissionId === c.id && app.status === 'accepted')),
     ongoing: commissions.filter(c => applications.some(app => app.commissionId === c.id && app.status === 'accepted')),
     done: commissions.filter(c => new Date(c.deadline) < new Date()),
   };
@@ -87,7 +89,15 @@ export default function DashboardClient() {
         {items.map(c => {
           const s = statusLabel(c, applications);
           const accepted = applications.some((application) => application.commissionId === c.id && application.status === "accepted");
-          const stage = accepted ? projectStages.find((item) => item.id === getProjectProgress(c.id).currentStage) : null;
+          const progress = accepted ? getProjectProgress(c.id) : null;
+          const stage = progress ? projectStages.find((item) => item.id === progress.currentStage) : null;
+          const stageStatus = progress?.stageStatus === 'completed'
+            ? '全部节点已完成'
+            : progress?.stageStatus === 'waiting_owner'
+              ? '待你确认'
+              : progress
+                ? '待乙方提交'
+                : '';
           return (
             <div key={c.id} onClick={() => navigate(`/commissions/${c.id}`)}
               className="flex cursor-pointer items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:bg-muted">
@@ -95,7 +105,7 @@ export default function DashboardClient() {
                 <p className="font-medium text-foreground">{c.title}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {c.priceRange} · 截止 {c.deadline} · 应征 {c.applicants} 人
-                  {stage ? ` · 当前节点：${stage.label}` : ""}
+                  {stage ? ` · 当前节点：${stage.label} · ${stageStatus}` : ""}
                 </p>
               </div>
               <span className={`rounded-full px-2 py-1 text-xs font-medium ${s.class}`}>{s.label}</span>

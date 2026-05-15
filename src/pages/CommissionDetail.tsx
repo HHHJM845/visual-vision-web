@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BadgeCheck, BrainCircuit, CheckCircle, ChevronLeft, Gauge, Loader2, MessageCircle, Pencil, Share2, Sparkles, Star, Trash2, UserRound, WandSparkles, XCircle } from "lucide-react";
+import { AlertTriangle, BadgeCheck, BrainCircuit, CheckCircle, ChevronLeft, FileText, Gauge, Loader2, MessageCircle, Pencil, ShieldAlert, Share2, Sparkles, Star, Trash2, UploadCloud, UserRound, WandSparkles, XCircle } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { EmptyState, ErrorState, PageLoading } from "@/components/StateViews";
 import { Button } from "@/components/ui/button";
@@ -24,14 +24,21 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  advanceProjectProgress,
   applyToCommission,
   closeCommission,
+  confirmProjectStage,
+  confirmProjectStageDelivery,
+  createProjectDispute,
   deleteCommission,
   getApplicantsWithProfiles,
   getCommissionById,
+  getProjectDeliveries,
+  getProjectDisputes,
   getProjectProgress,
   projectStages,
+  requestProjectStageChanges,
+  submitProjectStage,
+  submitProjectStageDelivery,
   updateApplicationDraft,
   updateApplicationStatus,
   withdrawApplication,
@@ -58,6 +65,16 @@ export default function CommissionDetail() {
   const [editApplicationMessage, setEditApplicationMessage] = useState("");
   const [editApplicationPrice, setEditApplicationPrice] = useState("");
   const [withdrawTargetId, setWithdrawTargetId] = useState<string | null>(null);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [deliveryTitle, setDeliveryTitle] = useState("");
+  const [deliveryDescription, setDeliveryDescription] = useState("");
+  const [deliveryFile, setDeliveryFile] = useState<File | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [disputeOpen, setDisputeOpen] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [disputeExpectation, setDisputeExpectation] = useState("");
+  const [stageActionBusy, setStageActionBusy] = useState(false);
   const [, setProgressTick] = useState(0);
   const { isLoading: matchLoading, scores, error: matchError, runMatch } = useSmartMatch();
 
@@ -70,6 +87,18 @@ export default function CommissionDetail() {
   const { data: applicants = [], refetch: refetchApplicants } = useQuery({
     queryKey: ['commission-applicants', commissionId],
     queryFn: () => getApplicantsWithProfiles(commissionId),
+    enabled: Number.isFinite(commissionId),
+  });
+
+  const { data: deliveries = [], refetch: refetchDeliveries } = useQuery({
+    queryKey: ['project-deliveries', commissionId],
+    queryFn: () => getProjectDeliveries(commissionId),
+    enabled: Number.isFinite(commissionId),
+  });
+
+  const { data: disputes = [], refetch: refetchDisputes } = useQuery({
+    queryKey: ['project-disputes', commissionId],
+    queryFn: () => getProjectDisputes(commissionId),
     enabled: Number.isFinite(commissionId),
   });
 
@@ -93,18 +122,33 @@ export default function CommissionDetail() {
   const isProjectOwner = !!user && !!commission && user.id === commission.authorId;
   const isAcceptedAigcer = !!user && !!acceptedApplicant && user.id === acceptedApplicant.aigcerId;
   const isClosed = commission?.status === 'closed';
+  const isPendingReview = commission?.status === 'pending_review';
+  const canViewApplicantPanel = isProjectOwner || user?.role === 'admin';
   const progress = commission ? getProjectProgress(commission.id) : null;
   const currentStageIndex = progress ? projectStages.findIndex((stage) => stage.id === progress.currentStage) : 0;
   const currentStage = projectStages[Math.max(currentStageIndex, 0)];
   const nextStage = projectStages[Math.min(currentStageIndex + 1, projectStages.length - 1)];
-  const canAdvanceProgress = !!acceptedApplicant && !!commission && (isProjectOwner || isAcceptedAigcer) && currentStage.id !== 'delivered';
-  const progressActionLabel = currentStage.id === 'delivered'
-    ? '已完成'
-    : !canAdvanceProgress
-      ? '仅合作双方可更新'
-      : isProjectOwner
-        ? nextStage.ownerAction
-        : nextStage.aigcerAction;
+  const progressCompleted = progress?.stageStatus === 'completed';
+  const canSubmitStage = !!acceptedApplicant && !!commission && isAcceptedAigcer && progress?.stageStatus === 'waiting_aigcer';
+  const canConfirmStage = !!acceptedApplicant && !!commission && isProjectOwner && progress?.stageStatus === 'waiting_owner';
+  const canActOnStage = canSubmitStage || canConfirmStage;
+  const currentDelivery = progress?.activeDeliveryId
+    ? deliveries.find((item) => item.id === progress.activeDeliveryId) ?? null
+    : deliveries.find((item) => item.stageId === progress?.currentStage && item.status === 'submitted') ?? null;
+  const progressActionLabel = progressCompleted
+    ? '流程已完成'
+    : canSubmitStage
+      ? currentStage.aigcerAction
+      : canConfirmStage
+        ? currentStage.ownerAction
+        : progress?.stageStatus === 'waiting_owner'
+          ? '等待甲方确认'
+          : '等待乙方提交';
+  const progressStatusText = progressCompleted
+    ? '全部交付节点已确认完成。'
+    : progress?.stageStatus === 'waiting_owner'
+      ? '乙方已提交当前节点，等待甲方反馈或确认。'
+      : '当前节点等待乙方提报交付内容。';
 
   function getScore(aigcerId: string) {
     return scores?.find((item) => item.id === aigcerId)?.score ?? null;
@@ -145,6 +189,7 @@ export default function CommissionDetail() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['commissions'] }),
         queryClient.invalidateQueries({ queryKey: ['commission', commission.id] }),
+        refetch(),
         refetchApplicants(),
       ]);
     } catch (e: unknown) {
@@ -266,24 +311,144 @@ export default function CommissionDetail() {
     }
   }
 
-  function handleAdvanceProgress() {
-    if (!commission || !canAdvanceProgress) return;
-    const next = advanceProjectProgress(commission.id);
+  function handleStageAction() {
+    if (!commission || !canActOnStage) return;
+    const next = canSubmitStage ? submitProjectStage(commission.id) : confirmProjectStage(commission.id);
     const stage = projectStages.find((item) => item.id === next.currentStage);
     setProgressTick((value) => value + 1);
+    const submitted = next.stageStatus === 'waiting_owner';
+    const completed = next.stageStatus === 'completed';
     toast({
-      title: stage?.id === 'delivered' ? '项目已完成交付' : `已推进到${stage?.label ?? '下一阶段'}`,
-      description: isProjectOwner ? '节点状态已同步到项目详情。' : '需求方可以继续确认下一步交付节点。',
+      title: submitted ? `${currentStage.label}已提交` : completed ? '全部节点已确认' : `已进入${stage?.label ?? '下一节点'}`,
+      description: submitted ? '已通知甲方进行反馈或确认。' : '节点确认已同步，乙方可以继续提交下一项。',
     });
     createProjectNotification({
-      title: stage?.id === 'delivered' ? "项目已完成交付" : `项目推进到${stage?.label ?? "下一阶段"}`,
-      description: `「${commission.title}」当前节点已更新，双方可在项目详情继续查看交付进度。`,
+      title: submitted ? "交付节点待确认" : completed ? "项目全部节点已完成" : `项目进入${stage?.label ?? "下一节点"}`,
+      description: submitted
+        ? `「${commission.title}」的${currentStage.label}已提交，甲方可进入项目详情确认或反馈。`
+        : `「${commission.title}」节点已确认，双方可继续推进后续交付。`,
       targetPath: `/commissions/${commission.id}`,
     });
   }
 
+  async function handleStageActionV2() {
+    if (!commission || !canActOnStage || !user) return;
+    if (canSubmitStage) {
+      setDeliveryTitle(currentStage.label);
+      setDeliveryDescription("");
+      setDeliveryFile(null);
+      setDeliveryOpen(true);
+      return;
+    }
+    setStageActionBusy(true);
+    try {
+      const next = await confirmProjectStageDelivery(commission.id, user.id);
+      const stage = projectStages.find((item) => item.id === next.currentStage);
+      setProgressTick((value) => value + 1);
+      await refetchDeliveries();
+      const completed = next.stageStatus === 'completed';
+      toast({
+        title: completed ? "全部节点已确认" : `已进入${stage?.label ?? "下一节点"}`,
+        description: "节点确认已保存，双方可继续推进后续交付。",
+      });
+      createProjectNotification({
+        title: completed ? "项目全部节点已完成" : `项目进入${stage?.label ?? "下一节点"}`,
+        description: `「${commission.title}」节点已确认，双方可继续推进后续交付。`,
+        targetPath: `/commissions/${commission.id}`,
+      });
+    } catch (e: unknown) {
+      toast({ title: "节点确认失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setStageActionBusy(false);
+    }
+  }
+
+  async function handleSubmitDelivery() {
+    if (!commission || !user || !canSubmitStage) return;
+    setStageActionBusy(true);
+    try {
+      await submitProjectStageDelivery(commission.id, {
+        title: deliveryTitle.trim(),
+        description: deliveryDescription.trim(),
+        file: deliveryFile,
+        submittedById: user.id,
+        submittedByName: user.nickname,
+      });
+      setDeliveryOpen(false);
+      setDeliveryTitle("");
+      setDeliveryDescription("");
+      setDeliveryFile(null);
+      setProgressTick((value) => value + 1);
+      await refetchDeliveries();
+      toast({ title: `${currentStage.label}已提交`, description: "交付物和版本记录已保存，等待甲方确认或反馈。" });
+      createProjectNotification({
+        title: "交付节点待确认",
+        description: `「${commission.title}」的${currentStage.label}已提交，甲方可进入项目详情确认或反馈。`,
+        targetPath: `/commissions/${commission.id}`,
+      });
+    } catch (e: unknown) {
+      toast({ title: "交付提交失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setStageActionBusy(false);
+    }
+  }
+
+  async function handleRequestChanges() {
+    if (!commission || !user || !canConfirmStage) return;
+    setStageActionBusy(true);
+    try {
+      await requestProjectStageChanges(commission.id, {
+        feedback: feedbackText.trim(),
+        requestedById: user.id,
+      });
+      setFeedbackOpen(false);
+      setFeedbackText("");
+      setProgressTick((value) => value + 1);
+      await refetchDeliveries();
+      toast({ title: "修改意见已发送", description: "当前节点已回到乙方待提交状态，历史反馈会保留在交付记录中。" });
+      createProjectNotification({
+        title: "交付节点需要修改",
+        description: `「${commission.title}」的${currentStage.label}已收到甲方反馈，请修改后重新提交。`,
+        targetPath: `/commissions/${commission.id}`,
+      });
+    } catch (e: unknown) {
+      toast({ title: "反馈提交失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setStageActionBusy(false);
+    }
+  }
+
+  async function handleCreateDispute() {
+    if (!commission || !user) return;
+    setStageActionBusy(true);
+    try {
+      await createProjectDispute({
+        commissionId: commission.id,
+        commissionTitle: commission.title,
+        stageId: currentStage?.id,
+        stageLabel: currentStage?.label,
+        applicantId: acceptedApplicant?.aigcerId,
+        applicantName: acceptedApplicant?.aigcerNickname,
+        reporterId: user.id,
+        reporterName: user.nickname,
+        reason: disputeReason.trim(),
+        expectation: disputeExpectation.trim(),
+      });
+      setDisputeOpen(false);
+      setDisputeReason("");
+      setDisputeExpectation("");
+      await refetchDisputes();
+      toast({ title: "投诉/纠纷已提交", description: "平台管理员会在后台审核中心处理并留存记录。" });
+    } catch (e: unknown) {
+      toast({ title: "提交失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setStageActionBusy(false);
+    }
+  }
+
   function getApplyButton() {
     if (!commission) return null;
+    if (isPendingReview) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目审核中</Button>;
     if (isClosed) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已关闭招募</Button>;
     if (isExpired) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已截止</Button>;
     if (acceptedApplicant) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已进入合作中</Button>;
@@ -307,6 +472,17 @@ export default function CommissionDetail() {
         <Navbar />
         <div className="mx-auto max-w-3xl px-4 py-10">
           <EmptyState title="项目不存在或已下架" description="该需求可能已被关闭，建议返回列表查看其它机会。" actionLabel="返回项目列表" onAction={() => navigate('/commissions')} />
+        </div>
+      </div>
+    );
+  }
+
+  if (commission.status === 'pending_review' && !isProjectOwner && user?.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-muted">
+        <Navbar />
+        <div className="mx-auto max-w-3xl px-4 py-10">
+          <EmptyState title="项目正在审核中" description="该需求通过平台审核后，才会开放给创作者查看和应征。" actionLabel="返回项目列表" onAction={() => navigate('/commissions')} />
         </div>
       </div>
     );
@@ -353,7 +529,7 @@ export default function CommissionDetail() {
             <div className="mb-6 rounded-lg border border-border bg-card p-6">
               <div className="mb-2 flex items-start justify-between gap-4">
                 <h1 className="text-2xl font-bold text-card-foreground">{commission.title}</h1>
-                <Badge variant={isExpired || isClosed ? "secondary" : "outline"} className="flex-shrink-0 text-xs">{isClosed ? "已关闭" : isExpired ? "已截止" : "审核项目"}</Badge>
+                <Badge variant={isExpired || isClosed ? "secondary" : "outline"} className="flex-shrink-0 text-xs">{isPendingReview ? "审核中" : isClosed ? "已关闭" : isExpired ? "已截止" : "审核项目"}</Badge>
               </div>
               <div className="mb-6 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                 <span>发布方 {commission.authorNickname}</span>
@@ -429,7 +605,7 @@ export default function CommissionDetail() {
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Project Started</p>
                     <h2 className="mt-1 text-lg font-bold text-foreground">已选定 {acceptedApplicant.aigcerNickname}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      当前项目已进入合作中。下一步可继续确认档期、首版样片节点和交付验收标准。
+                      当前项目已进入合作中。后续每个关键节点都需要乙方提交，甲方反馈或确认后才会进入下一项。
                     </p>
                   </div>
                   <Badge className="w-fit rounded-full bg-primary text-primary-foreground">合作中</Badge>
@@ -444,35 +620,90 @@ export default function CommissionDetail() {
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Delivery Control</p>
                     <h2 className="mt-1 text-lg font-bold text-foreground">合作节点管理</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      当前阶段：{currentStage.label}。{currentStage.id === 'delivered' ? '项目已完成交付，可进入评价与复盘。' : `下一阶段是${nextStage.label}。`}
+                      当前阶段：{currentStage.label}。{progressStatusText}
                     </p>
                   </div>
                   <Badge variant="outline" className="w-fit rounded-full">{currentStage.percent}%</Badge>
                 </div>
-                <div className="grid gap-3 md:grid-cols-5">
+                <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4">
                   {projectStages.map((stage, index) => {
-                    const done = index <= currentStageIndex;
+                    const done = index < currentStageIndex || progressCompleted;
+                    const active = index === currentStageIndex && !progressCompleted;
                     return (
-                      <div key={stage.id} className={`rounded-xl border p-3 text-sm ${done ? 'border-primary/30 bg-accent text-foreground' : 'border-border bg-muted/40 text-muted-foreground'}`}>
-                        <div className={`mb-2 h-2 rounded-full ${done ? 'bg-primary' : 'bg-border'}`} />
+                      <div key={stage.id} className={`rounded-xl border p-3 text-sm ${done ? 'border-primary/30 bg-accent text-foreground' : active ? 'border-primary bg-primary/5 text-foreground' : 'border-border bg-muted/40 text-muted-foreground'}`}>
+                        <div className={`mb-2 h-2 rounded-full ${done ? 'bg-primary' : active ? 'bg-primary/60' : 'bg-border'}`} />
                         <p className="font-medium">{stage.label}</p>
+                        {active && <p className="mt-1 text-xs text-muted-foreground">{progress?.stageStatus === 'waiting_owner' ? '待甲方确认' : '待乙方提交'}</p>}
                       </div>
                     );
                   })}
                 </div>
                 <div className="mt-5 flex flex-col gap-3 rounded-xl bg-muted p-4 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm text-muted-foreground">
-                    {canAdvanceProgress
-                      ? '确认当前节点已完成后，可推进到下一阶段。'
-                      : '只有项目发布方或已选定创作者可以更新节点。'}
+                    {canSubmitStage
+                      ? '请提交当前节点内容，提交后将等待甲方反馈或确认。'
+                      : canConfirmStage
+                        ? '乙方已提交当前节点，请确认无误后进入下一项。'
+                        : progressStatusText}
                   </p>
-                  <Button className="rounded-full" onClick={handleAdvanceProgress} disabled={!canAdvanceProgress}>
-                    {progressActionLabel}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    {canConfirmStage && (
+                      <Button variant="outline" className="rounded-full" onClick={() => setFeedbackOpen(true)} disabled={stageActionBusy}>
+                        要求修改
+                      </Button>
+                    )}
+                    <Button className="rounded-full" onClick={handleStageActionV2} disabled={!canActOnStage || stageActionBusy}>
+                      {stageActionBusy ? "处理中..." : progressActionLabel}
+                    </Button>
+                  </div>
                 </div>
+                {acceptedApplicant && (
+                  <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_280px]">
+                    <div className="rounded-xl border border-border p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-foreground">交付记录</p>
+                        <Badge variant="secondary" className="rounded-full">{currentDelivery ? "当前待确认" : `${deliveries.length} 条`}</Badge>
+                      </div>
+                      <div className="space-y-3">
+                        {deliveries.length === 0 && (
+                          <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">还没有交付记录，乙方提交当前节点后会在这里形成版本记录。</p>
+                        )}
+                        {deliveries.slice(0, 4).map((item) => (
+                          <div key={item.id} className="rounded-lg bg-muted p-3 text-sm">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <FileText className="h-4 w-4 text-primary" />
+                              <span className="font-medium text-foreground">{item.stageLabel} V{item.version}</span>
+                              <Badge variant="outline" className="rounded-full">
+                                {item.status === 'confirmed' ? '已确认' : item.status === 'changes_requested' ? '需修改' : '待确认'}
+                              </Badge>
+                            </div>
+                            <p className="mt-2 text-muted-foreground">{item.description}</p>
+                            {item.fileUrl && (
+                              <a className="mt-2 inline-flex text-xs font-medium text-primary hover:underline" href={item.fileUrl} target="_blank" rel="noreferrer">
+                                查看附件：{item.fileName}
+                              </a>
+                            )}
+                            {item.feedback && <p className="mt-2 rounded-md bg-background p-2 text-xs text-muted-foreground">反馈：{item.feedback}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border p-4">
+                      <p className="text-sm font-semibold text-foreground">争议处理</p>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">交付范围、修改次数、验收结果有争议时，可提交平台介入，后台会形成审核日志。</p>
+                      <Button variant="outline" className="mt-4 w-full rounded-full" onClick={() => setDisputeOpen(true)}>
+                        <ShieldAlert className="mr-2 h-4 w-4" /> 发起投诉/纠纷
+                      </Button>
+                      {disputes.length > 0 && (
+                        <p className="mt-3 text-xs text-muted-foreground">已有 {disputes.length} 条纠纷记录，最近状态：{disputes[0].status}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
+            {canViewApplicantPanel && (
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
               <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -605,6 +836,7 @@ export default function CommissionDetail() {
                 </div>
               )}
             </div>
+            )}
           </main>
         </div>
       </div>
@@ -612,6 +844,70 @@ export default function CommissionDetail() {
       <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 p-3 backdrop-blur lg:hidden">
         {getApplyButton()}
       </div>
+
+      <Dialog open={deliveryOpen} onOpenChange={setDeliveryOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>提交当前交付节点</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>交付标题</Label>
+              <Input className="mt-1" value={deliveryTitle} onChange={(event) => setDeliveryTitle(event.target.value)} />
+            </div>
+            <div>
+              <Label>交付说明</Label>
+              <Textarea className="mt-1" rows={4} placeholder="说明本次提交的内容、版本范围、需要甲方重点确认的点..." value={deliveryDescription} onChange={(event) => setDeliveryDescription(event.target.value)} />
+            </div>
+            <div>
+              <Label>附件</Label>
+              <label className="mt-1 flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/60 px-4 py-5 text-center text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:bg-accent">
+                <UploadCloud className="mb-2 h-5 w-5 text-primary" />
+                <span>{deliveryFile ? deliveryFile.name : "上传脚本、风格图、分镜、视频文件或压缩包"}</span>
+                <input type="file" className="hidden" onChange={(event) => setDeliveryFile(event.target.files?.[0] ?? null)} />
+              </label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeliveryOpen(false)}>取消</Button>
+            <Button onClick={handleSubmitDelivery} disabled={stageActionBusy || deliveryTitle.trim().length < 2 || deliveryDescription.trim().length < 8}>
+              {stageActionBusy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />提交中...</> : "提交交付物"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={feedbackOpen} onOpenChange={setFeedbackOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>要求修改</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">请写清楚需要调整的内容，当前节点会回到乙方待提交状态，反馈会进入版本记录。</p>
+            <Textarea rows={5} placeholder="例如：第 3 镜头需要补产品近景；片尾品牌露出延长 1 秒..." value={feedbackText} onChange={(event) => setFeedbackText(event.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFeedbackOpen(false)}>取消</Button>
+            <Button onClick={handleRequestChanges} disabled={stageActionBusy || feedbackText.trim().length < 6}>发送修改意见</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={disputeOpen} onOpenChange={setDisputeOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>发起投诉/纠纷</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>问题说明</Label>
+              <Textarea className="mt-1" rows={4} placeholder="说明争议发生在哪个节点、双方分歧是什么、已有沟通结果..." value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} />
+            </div>
+            <div>
+              <Label>希望平台如何处理</Label>
+              <Textarea className="mt-1" rows={3} placeholder="例如：协助确认交付范围、要求补充修改、冻结节点确认..." value={disputeExpectation} onChange={(event) => setDisputeExpectation(event.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDisputeOpen(false)}>取消</Button>
+            <Button onClick={handleCreateDispute} disabled={stageActionBusy || disputeReason.trim().length < 8 || disputeExpectation.trim().length < 4}>提交平台处理</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={applyOpen} onOpenChange={setApplyOpen}>
         <DialogContent>

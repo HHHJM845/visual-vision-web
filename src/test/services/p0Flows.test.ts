@@ -66,18 +66,24 @@ describe('P0 product flow fallbacks', () => {
     expect(commissions.some((commission) => commission.title.includes('AI'))).toBe(true);
   });
 
-  it('advances accepted project progress through the first delivery stage', async () => {
+  it('moves delivery progress from creator submission to client confirmation', async () => {
     const {
-      advanceProjectProgress,
+      confirmProjectStage,
       getProjectProgress,
+      submitProjectStage,
     } = await import('@/services/commissionService');
 
-    expect(getProjectProgress(1).currentStage).toBe('kickoff');
+    expect(getProjectProgress(1).currentStage).toBe('script');
+    expect(getProjectProgress(1).stageStatus).toBe('waiting_aigcer');
 
-    const next = advanceProjectProgress(1);
+    const submitted = submitProjectStage(1);
+    expect(submitted.currentStage).toBe('script');
+    expect(submitted.stageStatus).toBe('waiting_owner');
 
-    expect(next.currentStage).toBe('concept');
-    expect(getProjectProgress(1).currentStage).toBe('concept');
+    const confirmed = confirmProjectStage(1);
+    expect(confirmed.currentStage).toBe('style');
+    expect(confirmed.stageStatus).toBe('waiting_aigcer');
+    expect(getProjectProgress(1).currentStage).toBe('style');
   });
 
   it('lets project owners edit, close, and delete a project in the local fallback store', async () => {

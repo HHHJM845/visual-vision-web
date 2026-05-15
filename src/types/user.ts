@@ -1,6 +1,7 @@
 // src/types/user.ts
-export type UserRole = 'aigcer' | 'client';
-export type VerificationStatus = 'none' | 'pending' | 'verified';
+export type UserRole = 'aigcer' | 'client' | 'admin';
+export type AdminRole = 'super_admin' | 'operator';
+export type VerificationStatus = 'none' | 'pending' | 'verified' | 'rejected' | 'needs_changes';
 export type ClientVerificationType = 'realname' | 'enterprise';
 
 export interface PortfolioItem {
@@ -23,6 +24,7 @@ export interface User {
   phone: string;
   nickname: string;
   role: UserRole;
+  adminRole?: AdminRole;
   verificationStatus: VerificationStatus;
   clientVerificationType?: ClientVerificationType;
   aigcerProfile?: AigcerProfile;

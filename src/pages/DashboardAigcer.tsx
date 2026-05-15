@@ -104,7 +104,13 @@ export default function DashboardAigcer() {
 
   function progressFor(commissionId: number) {
     const progress = getProjectProgress(commissionId);
-    return projectStages.find((stage) => stage.id === progress.currentStage) ?? projectStages[0];
+    const stage = projectStages.find((item) => item.id === progress.currentStage) ?? projectStages[0];
+    const status = progress.stageStatus === 'completed'
+      ? '全部节点已完成'
+      : progress.stageStatus === 'waiting_owner'
+        ? '待甲方确认'
+        : '待你提交';
+    return { stage, status };
   }
 
   return (
@@ -199,11 +205,11 @@ export default function DashboardAigcer() {
                       {app.status === "accepted" && (
                         <div className="mt-3">
                           {(() => {
-                            const stage = progressFor(app.commissionId);
+                            const { stage, status } = progressFor(app.commissionId);
                             return (
                               <>
                                 <Progress value={stage.percent} className="h-1.5" />
-                                <p className="text-xs text-muted-foreground mt-1">{stage.label} 阶段</p>
+                                <p className="text-xs text-muted-foreground mt-1">{stage.label} · {status}</p>
                               </>
                             );
                           })()}

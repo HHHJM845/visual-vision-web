@@ -204,11 +204,11 @@ export const galleryItems = [
 ];
 
 export const showcaseItems = [
-  { id: "s1", title: "【企业】品牌AI宣传片", tag: "24H", sold: 8, price: 180, author: "云雾视觉机", avatar: "🎬", category: "宣传片", delivery: "24 小时交初稿" },
-  { id: "s2", title: "火速半分钟短视频", tag: "24H", sold: 7, price: 168, author: "像野骑好好玩", avatar: "⚡", category: "短视频", delivery: "24 小时交初稿" },
-  { id: "s3", title: "水墨风AI影像", tag: "特价", sold: 92, price: 126, author: "久生1111", avatar: "🖌️", category: "概念影像", delivery: "3 天交付" },
-  { id: "s4", title: "概念影像定制", tag: null, sold: 44, price: 520, author: "他里啦啦噜666", avatar: "🌌", category: "概念影像", delivery: "5 天交付" },
-  { id: "s5", title: "数字人产品讲解", tag: "48H", sold: 23, price: 320, author: "松松松松力", avatar: "🤖", category: "数字人", delivery: "48 小时交初稿" },
+  { id: "s1", title: "【企业】品牌AI宣传片", tag: "24H", sold: 8, price: 180, author: "云雾视觉机", avatar: "🎬", category: "宣传片", delivery: "24 小时交初稿", imageUrl: "/showcase/brand-ai-promo.svg" },
+  { id: "s2", title: "火速半分钟短视频", tag: "24H", sold: 7, price: 168, author: "像野骑好好玩", avatar: "⚡", category: "短视频", delivery: "24 小时交初稿", imageUrl: "/showcase/short-video.svg" },
+  { id: "s3", title: "水墨风AI影像", tag: "特价", sold: 92, price: 126, author: "久生1111", avatar: "🖌️", category: "概念影像", delivery: "3 天交付", imageUrl: "/showcase/ink-ai-film.svg" },
+  { id: "s4", title: "概念影像定制", tag: null, sold: 44, price: 520, author: "他里啦啦噜666", avatar: "🌌", category: "概念影像", delivery: "5 天交付", imageUrl: "/showcase/concept-custom.svg" },
+  { id: "s5", title: "数字人产品讲解", tag: "48H", sold: 23, price: 320, author: "松松松松力", avatar: "🤖", category: "数字人", delivery: "48 小时交初稿", imageUrl: "/showcase/digital-human.svg" },
 ];
 
 export const eventItems = [

@@ -3,7 +3,7 @@ import { Bell, CalendarDays, CheckCircle2, Film, ShoppingBag } from "lucide-reac
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import { PageHero, PageShell, SectionTitle } from "@/components/PageChrome";
-import { EmptyState } from "@/components/StateViews";
+import { EmptyState, PermissionState } from "@/components/StateViews";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import {
   NotificationItem,
 } from "@/services/engagementService";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 const noticeIconMap: Record<NotificationItem["type"], typeof ShoppingBag> = {
   "showcase-intent": ShoppingBag,
@@ -32,6 +33,7 @@ function formatTime(value: string) {
 
 const Messages = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState(() => listNotifications());
   const showcaseIntents = useMemo(() => listShowcaseIntents(), []);
   const eventRegistrations = useMemo(() => listEventRegistrations(), []);
@@ -43,6 +45,20 @@ const Messages = () => {
       setNotifications(listNotifications());
     }
     if (item.targetPath) navigate(item.targetPath);
+  }
+
+  if (!user) {
+    return (
+      <PageShell tone="muted">
+        <Navbar />
+        <PermissionState
+          title="请先登录"
+          description="登录后可以查看橱窗沟通、活动报名和项目节点提醒。"
+          actionLabel="去登录"
+          onAction={() => navigate("/login")}
+        />
+      </PageShell>
+    );
   }
 
   return (

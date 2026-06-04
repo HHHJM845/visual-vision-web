@@ -7,8 +7,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { EmptyState, ErrorState, PageLoading, PermissionState } from "@/components/StateViews";
 import { useAuth } from "@/contexts/AuthContext";
-import { getApplicationsByAigcer, getCommissionById, getProjectProgress, projectStages } from "@/services/commissionService";
-import { Application, Commission } from "@/types/commission";
+import { getApplicationsByAigcer, getCommissionById, getProjectDeliveries, getProjectProgress, projectStages } from "@/services/commissionService";
+import { getContractByCommission } from "@/services/contractService";
+import { buildAigcerTodos, ProjectTodo } from "@/services/projectTodoService";
+import { Application, Commission, DeliverySubmission } from "@/types/commission";
+import { ProjectContract } from "@/types/contract";
 
 interface AppWithCommission {
   app: Application;
@@ -20,6 +23,7 @@ export default function DashboardAigcer() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [appDetails, setAppDetails] = useState<AppWithCommission[]>([]);
+  const [todos, setTodos] = useState<ProjectTodo[]>([]);
   const activeTab = searchParams.get("tab") === "portfolio" ? "portfolio" : "projects";
 
   const canLoadApplications = !!user;
@@ -57,6 +61,49 @@ export default function DashboardAigcer() {
       cancelled = true;
     };
   }, [applications, canLoadApplications]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTodos() {
+      if (!user || user.role !== 'aigcer') {
+        setTodos([]);
+        return;
+      }
+
+      const accepted = applications.filter((application) => application.status === 'accepted');
+      const commissionsById: Record<number, Commission> = {};
+      const contractsByCommission: Record<number, ProjectContract | null> = {};
+      const deliveriesByCommission: Record<number, DeliverySubmission[]> = {};
+
+      for (const application of accepted) {
+        const commission = appDetails.find((item) => item.app.id === application.id)?.commission
+          ?? await getCommissionById(application.commissionId).catch(() => null);
+        if (!commission) continue;
+        commissionsById[commission.id] = commission;
+        contractsByCommission[commission.id] = await getContractByCommission(commission.id).catch(() => null);
+        deliveriesByCommission[commission.id] = await getProjectDeliveries(commission.id).catch(() => []);
+      }
+
+      const nextTodos = buildAigcerTodos({
+        applications,
+        commissionsById,
+        contractsByCommission,
+        progressByCommission: Object.fromEntries(accepted.map((application) => [
+          application.commissionId,
+          getProjectProgress(application.commissionId),
+        ])),
+        deliveriesByCommission,
+      });
+
+      if (!cancelled) setTodos(nextTodos);
+    }
+
+    loadTodos();
+    return () => {
+      cancelled = true;
+    };
+  }, [appDetails, applications, user]);
 
   if (isAuthLoading) {
     return (
@@ -113,6 +160,36 @@ export default function DashboardAigcer() {
     return { stage, status };
   }
 
+  function renderTodos() {
+    return (
+      <div className="mb-6 rounded-xl border border-border bg-card p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-foreground">待办事项</h2>
+            <p className="mt-1 text-xs text-muted-foreground">优先处理合同签署、节点提交和修改反馈。</p>
+          </div>
+          <span className="rounded-full border border-border px-2 py-1 text-xs text-muted-foreground">{todos.length}</span>
+        </div>
+        {todos.length === 0 ? (
+          <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">当前没有需要立即处理的项目事项。</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-3">
+            {todos.map((todo) => (
+              <div key={todo.id} className="rounded-lg border border-border p-3">
+                <p className="text-sm font-semibold text-foreground">{todo.title}</p>
+                <p className="mt-1 text-xs text-primary">{todo.commissionTitle}</p>
+                <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{todo.description}</p>
+                <Button className="mt-3 h-8 rounded-full px-3 text-xs" onClick={() => navigate(todo.targetPath)}>
+                  {todo.actionLabel}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-muted">
       <Navbar />
@@ -147,6 +224,8 @@ export default function DashboardAigcer() {
             </div>
           ))}
         </div>
+
+        {renderTodos()}
 
         <div className="bg-card border border-border rounded-xl p-6">
           <Tabs

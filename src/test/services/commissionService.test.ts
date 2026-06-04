@@ -6,6 +6,14 @@ import {
 
 beforeEach(() => { localStorage.clear(); });
 
+describe('commissionService local fallback', () => {
+  it('returns demo commissions without waiting for Supabase configuration', async () => {
+    const list = await getCommissions();
+
+    expect(list.some((item) => item.id === 1)).toBe(true);
+  });
+});
+
 describe.skip('getCommissions', () => {
   it('returns static commissions when no user commissions exist', async () => {
     const list = await getCommissions();

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bell, CalendarDays, CheckCircle2, Film, ShoppingBag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   listEventRegistrations,
-  listNotifications,
+  listNotificationsForUser,
   listShowcaseIntents,
   markNotificationRead,
   NotificationItem,
@@ -34,15 +34,19 @@ function formatTime(value: string) {
 const Messages = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState(() => listNotifications());
+  const [notifications, setNotifications] = useState(() => listNotificationsForUser(user));
   const showcaseIntents = useMemo(() => listShowcaseIntents(), []);
   const eventRegistrations = useMemo(() => listEventRegistrations(), []);
   const unreadCount = notifications.filter((item) => !item.read).length;
 
+  useEffect(() => {
+    setNotifications(listNotificationsForUser(user));
+  }, [user]);
+
   function handleRead(item: NotificationItem) {
     if (!item.read) {
       markNotificationRead(item.id);
-      setNotifications(listNotifications());
+      setNotifications(listNotificationsForUser(user));
     }
     if (item.targetPath) navigate(item.targetPath);
   }

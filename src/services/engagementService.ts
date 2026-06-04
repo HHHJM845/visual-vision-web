@@ -8,6 +8,10 @@ export interface NotificationItem {
   createdAt: string;
   read: boolean;
   targetPath?: string;
+  recipientId?: string;
+  recipientRole?: "client" | "aigcer" | "admin";
+  actionLabel?: string;
+  priority?: "normal" | "high";
 }
 
 export interface ShowcaseIntent {
@@ -37,6 +41,10 @@ export interface ProjectNotificationParams {
   title: string;
   description: string;
   targetPath: string;
+  recipientId?: string;
+  recipientRole?: "client" | "aigcer" | "admin";
+  actionLabel?: string;
+  priority?: "normal" | "high";
 }
 
 const INTENTS_KEY = "visionai.showcaseIntents";
@@ -155,6 +163,10 @@ export function createProjectNotification(params: ProjectNotificationParams) {
     title: params.title,
     description: params.description,
     targetPath: params.targetPath,
+    recipientId: params.recipientId,
+    recipientRole: params.recipientRole,
+    actionLabel: params.actionLabel,
+    priority: params.priority,
   });
 }
 
@@ -168,6 +180,16 @@ export function listEventRegistrations() {
 
 export function listNotifications() {
   return readList<NotificationItem>(NOTIFICATIONS_KEY);
+}
+
+export function listNotificationsForUser(user: { id: string; role?: string } | null) {
+  const notifications = listNotifications();
+  if (!user) return notifications.filter((item) => !item.recipientId);
+  return notifications.filter((item) => (
+    !item.recipientId
+    || item.recipientId === user.id
+    || (!!item.recipientRole && item.recipientRole === user.role)
+  ));
 }
 
 export function markNotificationRead(id: string) {

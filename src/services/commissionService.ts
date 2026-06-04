@@ -8,7 +8,10 @@ const APPLICATIONS_KEY = 'visionai.applications';
 const PROJECT_PROGRESS_KEY = 'visionai.projectProgress';
 const PROJECT_DELIVERIES_KEY = 'visionai.projectDeliveries';
 const PROJECT_DISPUTES_KEY = 'visionai.projectDisputes';
-const isSupabaseConfigured = !String(import.meta.env.VITE_SUPABASE_URL || '').includes('placeholder');
+const isSupabaseConfigured =
+  Boolean(import.meta.env.VITE_SUPABASE_URL) &&
+  Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) &&
+  !String(import.meta.env.VITE_SUPABASE_URL).includes('placeholder');
 
 export const projectStages = [
   { id: 'script', label: '脚本提报及反馈和确认', percent: 8, ownerAction: '确认脚本', aigcerAction: '提交脚本' },

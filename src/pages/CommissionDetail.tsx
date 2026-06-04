@@ -263,6 +263,10 @@ export default function CommissionDetail() {
         title: "项目应征已提交",
         description: `你已应征「${commission.title}」，后续筛选结果会同步到项目详情和工作台。`,
         targetPath: `/commissions/${commission.id}`,
+        recipientId: commission.authorId,
+        recipientRole: "client",
+        actionLabel: "查看应征",
+        priority: "normal",
       });
       setApplyOpen(false);
       setApplyMessage("");
@@ -296,6 +300,10 @@ export default function CommissionDetail() {
           ? `「${commission.title}」已选定 ${applicant?.aigcerNickname ?? "创作者"}，可以开始推进交付节点。`
           : `「${commission.title}」的一条应征已被拒绝。`,
         targetPath: `/commissions/${commission.id}`,
+        recipientId: applicant?.aigcerId,
+        recipientRole: "aigcer",
+        actionLabel: status === 'accepted' ? "进入项目" : "查看结果",
+        priority: status === 'accepted' ? "high" : "normal",
       });
       setSelectedApplicantId(null);
     await Promise.all([
@@ -460,6 +468,15 @@ export default function CommissionDetail() {
         escrowSummary: escrowSummaryText,
       });
       await refetchContract();
+      createProjectNotification({
+        title: "合作合同待签署",
+        description: `「${commission.title}」合同草稿已生成，请确认项目范围、交付节点和付款安排。`,
+        targetPath: `/commissions/${commission.id}`,
+        recipientId: acceptedApplicant.aigcerId,
+        recipientRole: "aigcer",
+        actionLabel: "签署合同",
+        priority: "high",
+      });
       toast({ title: "合同草稿已生成", description: "双方确认条款后可分别完成模拟签署。" });
     } catch (e: unknown) {
       toast({ title: "生成合同失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
@@ -473,8 +490,29 @@ export default function CommissionDetail() {
 
     setContractBusy(true);
     try {
-      await signContract(projectContract.id, role);
+      const signed = await signContract(projectContract.id, role);
       await refetchContract();
+      if (role === 'client') {
+        createProjectNotification({
+          title: "合作合同待你签署",
+          description: `「${projectContract.commissionTitle}」甲方已签署，请你确认合同。`,
+          targetPath: `/commissions/${projectContract.commissionId}`,
+          recipientId: projectContract.aigcerId,
+          recipientRole: "aigcer",
+          actionLabel: "签署合同",
+          priority: "high",
+        });
+      } else if (signed.status === 'active') {
+        createProjectNotification({
+          title: "合作合同已生效",
+          description: `「${projectContract.commissionTitle}」双方已完成签署，可以继续推进交付和托管。`,
+          targetPath: `/commissions/${projectContract.commissionId}`,
+          recipientId: projectContract.clientId,
+          recipientRole: "client",
+          actionLabel: "查看合同",
+          priority: "normal",
+        });
+      }
       toast({ title: "签署已记录", description: role === 'client' ? "甲方签署时间已写入合同。" : "乙方签署时间已写入合同。" });
     } catch (e: unknown) {
       toast({ title: "签署失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
@@ -545,6 +583,10 @@ export default function CommissionDetail() {
         title: completed ? "项目全部节点已完成" : `项目进入${stage?.label ?? "下一节点"}`,
         description: `「${commission.title}」节点已确认，双方可继续推进后续交付。`,
         targetPath: `/commissions/${commission.id}`,
+        recipientId: acceptedApplicant?.aigcerId,
+        recipientRole: "aigcer",
+        actionLabel: completed ? "查看项目" : "提交下一节点",
+        priority: "normal",
       });
     } catch (e: unknown) {
       toast({ title: "节点确认失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
@@ -575,6 +617,10 @@ export default function CommissionDetail() {
         title: "交付节点待确认",
         description: `「${commission.title}」的${currentStage.label}已提交，甲方可进入项目详情确认或反馈。`,
         targetPath: `/commissions/${commission.id}`,
+        recipientId: commission.authorId,
+        recipientRole: "client",
+        actionLabel: "确认交付",
+        priority: "high",
       });
     } catch (e: unknown) {
       toast({ title: "交付提交失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
@@ -600,6 +646,10 @@ export default function CommissionDetail() {
         title: "交付节点需要修改",
         description: `「${commission.title}」的${currentStage.label}已收到甲方反馈，请修改后重新提交。`,
         targetPath: `/commissions/${commission.id}`,
+        recipientId: acceptedApplicant?.aigcerId,
+        recipientRole: "aigcer",
+        actionLabel: "修改交付",
+        priority: "high",
       });
     } catch (e: unknown) {
       toast({ title: "反馈提交失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });

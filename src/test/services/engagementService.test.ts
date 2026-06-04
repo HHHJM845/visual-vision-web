@@ -4,8 +4,10 @@ import {
   createShowcaseIntent,
   listEventRegistrations,
   listNotifications,
+  listNotificationsForUser,
   listShowcaseIntents,
   markNotificationRead,
+  createProjectNotification,
 } from "@/services/engagementService";
 
 describe("engagementService", () => {
@@ -62,5 +64,39 @@ describe("engagementService", () => {
     const updated = markNotificationRead(notice.id);
     expect(updated?.read).toBe(true);
     expect(listNotifications()[0].read).toBe(true);
+  });
+
+  it("filters directed project notifications for the current user while keeping legacy notices visible", () => {
+    createProjectNotification({
+      title: "待签合同",
+      description: "请确认合作合同。",
+      targetPath: "/commissions/1",
+      recipientId: "aigcer-1",
+      recipientRole: "aigcer",
+      actionLabel: "去签署",
+      priority: "high",
+    });
+    createProjectNotification({
+      title: "甲方待办",
+      description: "请确认交付。",
+      targetPath: "/commissions/2",
+      recipientId: "client-1",
+      recipientRole: "client",
+    });
+    createProjectNotification({
+      title: "旧版项目通知",
+      description: "兼容没有收件人的旧通知。",
+      targetPath: "/commissions/3",
+    });
+
+    const notices = listNotificationsForUser({ id: "aigcer-1", role: "aigcer" });
+
+    expect(notices.map((item) => item.title)).toEqual(["旧版项目通知", "待签合同"]);
+    expect(notices[1]).toMatchObject({
+      recipientId: "aigcer-1",
+      recipientRole: "aigcer",
+      actionLabel: "去签署",
+      priority: "high",
+    });
   });
 });

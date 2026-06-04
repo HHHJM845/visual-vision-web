@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/Navbar";
@@ -6,8 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EmptyState, ErrorState, PageLoading, PermissionState } from "@/components/StateViews";
 import { useAuth } from "@/contexts/AuthContext";
-import { getApplicationsByAuthor, getCommissionsByAuthor, getProjectProgress, projectStages } from "@/services/commissionService";
+import { getApplicationsByAuthor, getCommissionsByAuthor, getProjectDeliveries, getProjectProgress, projectStages } from "@/services/commissionService";
+import { getContractByCommission } from "@/services/contractService";
+import { getEscrowBundleByCommission } from "@/services/escrowService";
+import { buildClientTodos, ProjectTodo } from "@/services/projectTodoService";
 import { Application, Commission } from "@/types/commission";
+import { ProjectContract } from "@/types/contract";
+import { EscrowBundle } from "@/types/escrow";
 
 function statusLabel(c: Commission, applications: Application[]) {
   const now = new Date();
@@ -36,6 +42,47 @@ export default function DashboardClient() {
     queryFn: () => getApplicationsByAuthor(user!.id),
     enabled: !!user,
   });
+  const [todos, setTodos] = useState<ProjectTodo[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTodos() {
+      if (!user || user.role !== 'client') {
+        setTodos([]);
+        return;
+      }
+
+      const ongoing = commissions.filter((commission) => (
+        applications.some((application) => application.commissionId === commission.id && application.status === 'accepted')
+      ));
+      const contractEntries: [number, ProjectContract | null][] = [];
+      const escrowEntries: [number, EscrowBundle | null][] = [];
+      const deliveryEntries = [];
+
+      for (const commission of ongoing) {
+        contractEntries.push([commission.id, await getContractByCommission(commission.id).catch(() => null)]);
+        escrowEntries.push([commission.id, await getEscrowBundleByCommission(commission.id).catch(() => null)]);
+        deliveryEntries.push([commission.id, await getProjectDeliveries(commission.id).catch(() => [])] as const);
+      }
+
+      const nextTodos = buildClientTodos({
+        commissions,
+        applications,
+        contractsByCommission: Object.fromEntries(contractEntries),
+        escrowByCommission: Object.fromEntries(escrowEntries),
+        progressByCommission: Object.fromEntries(ongoing.map((commission) => [commission.id, getProjectProgress(commission.id)])),
+        deliveriesByCommission: Object.fromEntries(deliveryEntries),
+      });
+
+      if (!cancelled) setTodos(nextTodos);
+    }
+
+    loadTodos();
+    return () => {
+      cancelled = true;
+    };
+  }, [applications, commissions, user]);
 
   if (!user) {
     return <div className="min-h-screen bg-muted"><Navbar /><PermissionState title="请先登录" description="登录后可以查看你的项目工作台。" actionLabel="去登录" onAction={() => navigate('/login')} /></div>;
@@ -116,6 +163,36 @@ export default function DashboardClient() {
     );
   }
 
+  function renderTodos() {
+    return (
+      <div className="mb-6 rounded-xl border border-border bg-card p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-foreground">待办事项</h2>
+            <p className="mt-1 text-xs text-muted-foreground">优先处理合同、托管和待确认交付。</p>
+          </div>
+          <Badge variant="outline">{todos.length}</Badge>
+        </div>
+        {todos.length === 0 ? (
+          <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">当前没有需要立即处理的项目事项。</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-3">
+            {todos.map((todo) => (
+              <div key={todo.id} className="rounded-lg border border-border p-3">
+                <p className="text-sm font-semibold text-foreground">{todo.title}</p>
+                <p className="mt-1 text-xs text-primary">{todo.commissionTitle}</p>
+                <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{todo.description}</p>
+                <Button className="mt-3 h-8 rounded-full px-3 text-xs" onClick={() => navigate(todo.targetPath)}>
+                  {todo.actionLabel}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-muted">
       <Navbar />
@@ -152,6 +229,8 @@ export default function DashboardClient() {
             </div>
           ))}
         </div>
+
+        {renderTodos()}
 
         {/* 项目列表 */}
         <div className="bg-card border border-border rounded-xl p-6">

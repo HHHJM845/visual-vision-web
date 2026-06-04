@@ -74,6 +74,45 @@ create table if not exists public.project_disputes (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.escrow_plans (
+  id text primary key default gen_random_uuid()::text,
+  commission_id bigint not null references public.commissions(id) on delete cascade,
+  total_amount numeric not null check (total_amount > 0),
+  currency text not null default 'CNY',
+  status text not null default 'draft' check (status in ('draft', 'funded', 'completed')),
+  released_amount numeric not null default 0,
+  created_by_id text not null,
+  funded_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.escrow_milestones (
+  id text primary key default gen_random_uuid()::text,
+  plan_id text not null references public.escrow_plans(id) on delete cascade,
+  commission_id bigint not null references public.commissions(id) on delete cascade,
+  stage_id text not null,
+  stage_label text not null,
+  percent numeric not null check (percent >= 0),
+  amount numeric not null check (amount >= 0),
+  status text not null default 'pending' check (status in ('pending', 'released')),
+  released_at timestamptz
+);
+
+create table if not exists public.escrow_releases (
+  id text primary key default gen_random_uuid()::text,
+  plan_id text not null references public.escrow_plans(id) on delete cascade,
+  commission_id bigint not null references public.commissions(id) on delete cascade,
+  milestone_id text not null references public.escrow_milestones(id) on delete cascade,
+  stage_id text not null,
+  stage_label text not null,
+  amount numeric not null check (amount >= 0),
+  released_by_id text not null,
+  released_to_id text not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.admin_audit_logs (
   id text primary key default gen_random_uuid()::text,
   review_id text not null,
@@ -90,6 +129,11 @@ create index if not exists project_deliverables_commission_idx on public.project
 create index if not exists project_deliverables_stage_idx on public.project_deliverables(commission_id, stage_id);
 create index if not exists project_disputes_commission_idx on public.project_disputes(commission_id);
 create index if not exists project_disputes_status_idx on public.project_disputes(status);
+create index if not exists escrow_plans_commission_idx on public.escrow_plans(commission_id);
+create index if not exists escrow_milestones_plan_idx on public.escrow_milestones(plan_id);
+create index if not exists escrow_milestones_commission_stage_idx on public.escrow_milestones(commission_id, stage_id);
+create index if not exists escrow_releases_plan_idx on public.escrow_releases(plan_id);
+create index if not exists escrow_releases_commission_idx on public.escrow_releases(commission_id);
 create index if not exists admin_audit_logs_created_idx on public.admin_audit_logs(created_at desc);
 
 drop trigger if exists project_progress_set_updated_at on public.project_progress;
@@ -105,6 +149,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists project_disputes_set_updated_at on public.project_disputes;
 create trigger project_disputes_set_updated_at
 before update on public.project_disputes
+for each row execute function public.set_updated_at();
+
+drop trigger if exists escrow_plans_set_updated_at on public.escrow_plans;
+create trigger escrow_plans_set_updated_at
+before update on public.escrow_plans
 for each row execute function public.set_updated_at();
 
 insert into storage.buckets (id, name, public)
@@ -128,6 +177,9 @@ $$;
 alter table public.project_progress enable row level security;
 alter table public.project_deliverables enable row level security;
 alter table public.project_disputes enable row level security;
+alter table public.escrow_plans enable row level security;
+alter table public.escrow_milestones enable row level security;
+alter table public.escrow_releases enable row level security;
 alter table public.admin_audit_logs enable row level security;
 
 drop policy if exists "Project progress visible to project parties" on public.project_progress;
@@ -250,6 +302,103 @@ on public.project_disputes for update
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+drop policy if exists "Project parties read escrow plans" on public.escrow_plans;
+create policy "Project parties read escrow plans"
+on public.escrow_plans for select
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    left join public.applications a on a.commission_id = c.id and a.status = 'accepted'
+    where c.id = escrow_plans.commission_id
+      and (c.author_id = auth.uid()::text or a.aigcer_id = auth.uid()::text)
+  )
+);
+
+drop policy if exists "Project owners manage escrow plans" on public.escrow_plans;
+create policy "Project owners manage escrow plans"
+on public.escrow_plans for all
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    where c.id = escrow_plans.commission_id
+      and c.author_id = auth.uid()::text
+  )
+)
+with check (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    where c.id = escrow_plans.commission_id
+      and c.author_id = auth.uid()::text
+  )
+);
+
+drop policy if exists "Project parties read escrow milestones" on public.escrow_milestones;
+create policy "Project parties read escrow milestones"
+on public.escrow_milestones for select
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    left join public.applications a on a.commission_id = c.id and a.status = 'accepted'
+    where c.id = escrow_milestones.commission_id
+      and (c.author_id = auth.uid()::text or a.aigcer_id = auth.uid()::text)
+  )
+);
+
+drop policy if exists "Project owners manage escrow milestones" on public.escrow_milestones;
+create policy "Project owners manage escrow milestones"
+on public.escrow_milestones for all
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    where c.id = escrow_milestones.commission_id
+      and c.author_id = auth.uid()::text
+  )
+)
+with check (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    where c.id = escrow_milestones.commission_id
+      and c.author_id = auth.uid()::text
+  )
+);
+
+drop policy if exists "Project parties read escrow releases" on public.escrow_releases;
+create policy "Project parties read escrow releases"
+on public.escrow_releases for select
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    left join public.applications a on a.commission_id = c.id and a.status = 'accepted'
+    where c.id = escrow_releases.commission_id
+      and (c.author_id = auth.uid()::text or a.aigcer_id = auth.uid()::text)
+  )
+);
+
+drop policy if exists "Project owners create escrow releases" on public.escrow_releases;
+create policy "Project owners create escrow releases"
+on public.escrow_releases for insert
+to authenticated
+with check (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    where c.id = escrow_releases.commission_id
+      and c.author_id = auth.uid()::text
+  )
+);
 
 drop policy if exists "Admins read audit logs" on public.admin_audit_logs;
 create policy "Admins read audit logs"

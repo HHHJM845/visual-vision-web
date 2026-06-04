@@ -1,13 +1,46 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const supabaseState = vi.hoisted(() => ({
+  isConfigured: false,
+  failRemote: true,
+  fromCalls: 0,
+}));
+
 vi.mock('@/lib/supabase', () => ({
-  isSupabaseConfigured: false,
-  supabase: {},
+  get isSupabaseConfigured() {
+    return supabaseState.isConfigured;
+  },
+  supabase: {
+    from: vi.fn(() => ({
+      ...(() => {
+        supabaseState.fromCalls += 1;
+        return {};
+      })(),
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          maybeSingle: vi.fn(async () => ({ data: null, error: supabaseState.failRemote ? new Error('offline') : null })),
+          order: vi.fn(async () => ({ data: [], error: supabaseState.failRemote ? new Error('offline') : null })),
+        })),
+        order: vi.fn(async () => ({ data: [], error: supabaseState.failRemote ? new Error('offline') : null })),
+      })),
+      insert: vi.fn(() => ({
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({ data: null, error: new Error('offline') })),
+        })),
+      })),
+      update: vi.fn(() => ({
+        eq: vi.fn(async () => ({ data: null, error: new Error('offline') })),
+      })),
+    })),
+  },
 }));
 
 describe('escrowService', () => {
   beforeEach(() => {
     localStorage.clear();
+    supabaseState.isConfigured = false;
+    supabaseState.failRemote = true;
+    supabaseState.fromCalls = 0;
     vi.resetModules();
   });
 
@@ -58,5 +91,62 @@ describe('escrowService', () => {
 
     expect(funded.plan.status).toBe('funded');
     expect(funded.plan.fundedAt).toBeTruthy();
+  });
+
+  it('releases a funded milestone once', async () => {
+    const { createEscrowDraft, fundEscrowPlan, releaseEscrowMilestone } = await import('@/services/escrowService');
+
+    const draft = await createEscrowDraft({ commissionId: 1, totalAmount: 10000, createdById: 'client-1' });
+    await fundEscrowPlan(draft.plan.id);
+
+    const first = await releaseEscrowMilestone({
+      commissionId: 1,
+      stageId: draft.milestones[0].stageId,
+      releasedById: 'client-1',
+      releasedToId: 'aigcer-1',
+    });
+    const second = await releaseEscrowMilestone({
+      commissionId: 1,
+      stageId: draft.milestones[0].stageId,
+      releasedById: 'client-1',
+      releasedToId: 'aigcer-1',
+    });
+
+    expect(first.releases).toHaveLength(1);
+    expect(second.releases).toHaveLength(1);
+    expect(second.plan.releasedAmount).toBe(first.plan.releasedAmount);
+    expect(second.milestones[0].status).toBe('released');
+  });
+
+  it('marks the plan completed after all milestones are released', async () => {
+    const { createEscrowDraft, fundEscrowPlan, releaseEscrowMilestone } = await import('@/services/escrowService');
+
+    const draft = await createEscrowDraft({ commissionId: 1, totalAmount: 10000, createdById: 'client-1' });
+    await fundEscrowPlan(draft.plan.id);
+
+    let bundle = draft;
+    for (const milestone of draft.milestones) {
+      bundle = await releaseEscrowMilestone({
+        commissionId: 1,
+        stageId: milestone.stageId,
+        releasedById: 'client-1',
+        releasedToId: 'aigcer-1',
+      });
+    }
+
+    expect(bundle.plan.status).toBe('completed');
+    expect(bundle.plan.releasedAmount).toBe(10000);
+  });
+
+  it('falls back to local storage when remote escrow tables are unavailable', async () => {
+    supabaseState.isConfigured = true;
+    supabaseState.failRemote = true;
+
+    const { createEscrowDraft } = await import('@/services/escrowService');
+    const draft = await createEscrowDraft({ commissionId: 1, totalAmount: 10000, createdById: 'client-1' });
+
+    expect(draft.plan.status).toBe('draft');
+    expect(draft.milestones.length).toBeGreaterThan(0);
+    expect(supabaseState.fromCalls).toBeGreaterThan(0);
   });
 });

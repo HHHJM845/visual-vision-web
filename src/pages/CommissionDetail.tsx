@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BadgeCheck, BrainCircuit, CheckCircle, ChevronLeft, FileText, Gauge, Loader2, MessageCircle, Pencil, ShieldAlert, Share2, Sparkles, Star, Trash2, UploadCloud, UserRound, WandSparkles, XCircle } from "lucide-react";
@@ -44,6 +44,13 @@ import {
   withdrawApplication,
 } from "@/services/commissionService";
 import { createProjectNotification } from "@/services/engagementService";
+import {
+  createEscrowDraft,
+  fundEscrowPlan,
+  getEscrowBundleByCommission,
+  releaseEscrowMilestone,
+  updateEscrowMilestones,
+} from "@/services/escrowService";
 import { useSmartMatch } from "@/hooks/useSmartMatch";
 
 export default function CommissionDetail() {
@@ -75,6 +82,9 @@ export default function CommissionDetail() {
   const [disputeReason, setDisputeReason] = useState("");
   const [disputeExpectation, setDisputeExpectation] = useState("");
   const [stageActionBusy, setStageActionBusy] = useState(false);
+  const [escrowBusy, setEscrowBusy] = useState(false);
+  const [escrowAmountInput, setEscrowAmountInput] = useState("");
+  const [escrowPercentInputs, setEscrowPercentInputs] = useState<Record<string, string>>({});
   const [, setProgressTick] = useState(0);
   const { isLoading: matchLoading, scores, error: matchError, runMatch } = useSmartMatch();
 
@@ -119,6 +129,13 @@ export default function CommissionDetail() {
   const isExpired = commission ? new Date(commission.deadline).getTime() < Date.now() : false;
   const selectedApplicant = applicants.find((applicant) => applicant.id === selectedApplicantId) ?? null;
   const acceptedApplicant = applicants.find((applicant) => applicant.status === 'accepted') ?? null;
+
+  const { data: escrowBundle = null, refetch: refetchEscrow } = useQuery({
+    queryKey: ['escrow', commissionId],
+    queryFn: () => getEscrowBundleByCommission(commissionId),
+    enabled: Number.isFinite(commissionId) && !!acceptedApplicant,
+  });
+
   const isProjectOwner = !!user && !!commission && user.id === commission.authorId;
   const isAcceptedAigcer = !!user && !!acceptedApplicant && user.id === acceptedApplicant.aigcerId;
   const isClosed = commission?.status === 'closed';
@@ -149,6 +166,46 @@ export default function CommissionDetail() {
     : progress?.stageStatus === 'waiting_owner'
       ? '乙方已提交当前节点，等待甲方反馈或确认。'
       : '当前节点等待乙方提报交付内容。';
+
+  function parseBudgetAmount(priceRange?: string) {
+    const text = priceRange ?? "";
+    const nums = text.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+    if (!nums.length) return 0;
+    const max = Math.max(...nums);
+    return /k/i.test(text) ? max * 1000 : max;
+  }
+
+  function formatCurrency(amount: number) {
+    return `¥${Math.round(amount).toLocaleString("zh-CN")}`;
+  }
+
+  const escrowPercentTotal = useMemo(() => {
+    if (!escrowBundle) return 0;
+    return Number(escrowBundle.milestones.reduce((sum, milestone) => (
+      sum + Number(escrowPercentInputs[milestone.id] ?? milestone.percent)
+    ), 0).toFixed(2));
+  }, [escrowBundle, escrowPercentInputs]);
+
+  const escrowReleasedAmount = escrowBundle?.plan.releasedAmount ?? 0;
+  const escrowPendingAmount = escrowBundle ? Math.max(0, escrowBundle.plan.totalAmount - escrowReleasedAmount) : 0;
+  const escrowReleaseProgress = escrowBundle?.plan.totalAmount
+    ? Math.round((escrowReleasedAmount / escrowBundle.plan.totalAmount) * 100)
+    : 0;
+
+  useEffect(() => {
+    if (commission && !escrowBundle && !escrowAmountInput) {
+      const amount = parseBudgetAmount(commission.priceRange);
+      if (amount > 0) setEscrowAmountInput(String(amount));
+    }
+  }, [commission, escrowBundle, escrowAmountInput]);
+
+  useEffect(() => {
+    if (!escrowBundle) return;
+    setEscrowAmountInput(String(escrowBundle.plan.totalAmount));
+    setEscrowPercentInputs(Object.fromEntries(
+      escrowBundle.milestones.map((milestone) => [milestone.id, String(milestone.percent)])
+    ));
+  }, [escrowBundle]);
 
   function getScore(aigcerId: string) {
     return scores?.find((item) => item.id === aigcerId)?.score ?? null;
@@ -311,6 +368,56 @@ export default function CommissionDetail() {
     }
   }
 
+  async function handleCreateEscrowDraft() {
+    if (!commission || !user) return;
+    const amount = Number(escrowAmountInput);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({ title: "托管金额无效", description: "请输入大于 0 的托管金额。", variant: "destructive" });
+      return;
+    }
+
+    setEscrowBusy(true);
+    try {
+      await createEscrowDraft({
+        commissionId: commission.id,
+        totalAmount: amount,
+        createdById: user.id,
+      });
+      await refetchEscrow();
+      toast({ title: "托管计划已创建", description: "请确认各节点付款比例，合计需等于 100%。" });
+    } catch (e: unknown) {
+      toast({ title: "创建托管计划失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setEscrowBusy(false);
+    }
+  }
+
+  async function handleFundEscrowPlan() {
+    if (!escrowBundle) return;
+    if (escrowPercentTotal !== 100) {
+      toast({ title: "付款比例不正确", description: "所有节点付款比例合计必须等于 100%。", variant: "destructive" });
+      return;
+    }
+
+    setEscrowBusy(true);
+    try {
+      await updateEscrowMilestones(
+        escrowBundle.plan.id,
+        escrowBundle.milestones.map((milestone) => ({
+          milestoneId: milestone.id,
+          percent: Number(escrowPercentInputs[milestone.id] ?? milestone.percent),
+        })),
+      );
+      await fundEscrowPlan(escrowBundle.plan.id);
+      await refetchEscrow();
+      toast({ title: "资金已进入模拟托管", description: "后续甲方确认节点后，系统会释放对应款项。" });
+    } catch (e: unknown) {
+      toast({ title: "确认托管失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setEscrowBusy(false);
+    }
+  }
+
   function handleStageAction() {
     if (!commission || !canActOnStage) return;
     const next = canSubmitStage ? submitProjectStage(commission.id) : confirmProjectStage(commission.id);
@@ -342,10 +449,28 @@ export default function CommissionDetail() {
     }
     setStageActionBusy(true);
     try {
+      const releasingStage = currentStage;
       const next = await confirmProjectStageDelivery(commission.id, user.id);
       const stage = projectStages.find((item) => item.id === next.currentStage);
       setProgressTick((value) => value + 1);
       await refetchDeliveries();
+      if (acceptedApplicant) {
+        try {
+          await releaseEscrowMilestone({
+            commissionId: commission.id,
+            stageId: releasingStage.id,
+            releasedById: user.id,
+            releasedToId: acceptedApplicant.aigcerId,
+          });
+          await refetchEscrow();
+        } catch (escrowError: unknown) {
+          toast({
+            title: "托管款项未释放",
+            description: escrowError instanceof Error ? escrowError.message : "交付已确认，但托管释放需要稍后重试。",
+            variant: "destructive",
+          });
+        }
+      }
       const completed = next.stageStatus === 'completed';
       toast({
         title: completed ? "全部节点已确认" : `已进入${stage?.label ?? "下一节点"}`,
@@ -610,6 +735,138 @@ export default function CommissionDetail() {
                   </div>
                   <Badge className="w-fit rounded-full bg-primary text-primary-foreground">合作中</Badge>
                 </div>
+              </div>
+            )}
+
+            {acceptedApplicant && (
+              <div className="mb-6 rounded-2xl border border-border bg-card p-6 shadow-sm">
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Escrow Payment</p>
+                    <h2 className="mt-1 text-lg font-bold text-foreground">托管付款</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      资金托管为模拟流程，用于展示按里程碑配置比例、验收后释放款项的交易闭环。
+                    </p>
+                  </div>
+                  {escrowBundle && (
+                    <Badge variant={escrowBundle.plan.status === 'draft' ? 'outline' : 'default'} className="w-fit rounded-full">
+                      {escrowBundle.plan.status === 'completed' ? '已全部释放' : escrowBundle.plan.status === 'funded' ? '已托管' : '待确认托管'}
+                    </Badge>
+                  )}
+                </div>
+
+                {!escrowBundle ? (
+                  <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+                    <div>
+                      <Label>模拟托管总额</Label>
+                      <Input
+                        className="mt-1"
+                        inputMode="numeric"
+                        value={escrowAmountInput}
+                        onChange={(event) => setEscrowAmountInput(event.target.value)}
+                        disabled={!isProjectOwner || escrowBusy}
+                      />
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        默认按项目预算上限预填，可在创建计划前调整。
+                      </p>
+                    </div>
+                    <Button
+                      className="rounded-full"
+                      onClick={handleCreateEscrowDraft}
+                      disabled={!isProjectOwner || escrowBusy || Number(escrowAmountInput) <= 0}
+                    >
+                      {escrowBusy ? "处理中..." : "创建托管计划"}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <div className="rounded-xl bg-muted p-4">
+                        <p className="text-xs text-muted-foreground">托管总额</p>
+                        <p className="mt-1 text-lg font-bold text-foreground">{formatCurrency(escrowBundle.plan.totalAmount)}</p>
+                      </div>
+                      <div className="rounded-xl bg-muted p-4">
+                        <p className="text-xs text-muted-foreground">已释放</p>
+                        <p className="mt-1 text-lg font-bold text-primary">{formatCurrency(escrowReleasedAmount)}</p>
+                      </div>
+                      <div className="rounded-xl bg-muted p-4">
+                        <p className="text-xs text-muted-foreground">待释放</p>
+                        <p className="mt-1 text-lg font-bold text-foreground">{formatCurrency(escrowPendingAmount)}</p>
+                      </div>
+                      <div className="rounded-xl bg-muted p-4">
+                        <p className="text-xs text-muted-foreground">比例合计</p>
+                        <p className={`mt-1 text-lg font-bold ${escrowPercentTotal === 100 ? 'text-foreground' : 'text-destructive'}`}>
+                          {escrowPercentTotal}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <Progress value={escrowReleaseProgress} className="h-2" />
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {escrowBundle.milestones.map((milestone) => {
+                        const percent = Number(escrowPercentInputs[milestone.id] ?? milestone.percent);
+                        const amount = escrowBundle.plan.totalAmount * percent / 100;
+                        return (
+                          <div key={milestone.id} className="rounded-xl border border-border p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">{milestone.stageLabel}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">{formatCurrency(amount)}</p>
+                              </div>
+                              <Badge variant={milestone.status === 'released' ? 'default' : 'outline'} className="rounded-full">
+                                {milestone.status === 'released' ? '已释放' : '待释放'}
+                              </Badge>
+                            </div>
+                            {escrowBundle.plan.status === 'draft' && isProjectOwner ? (
+                              <div className="mt-3 flex items-center gap-2">
+                                <Input
+                                  className="h-9"
+                                  inputMode="decimal"
+                                  value={escrowPercentInputs[milestone.id] ?? String(milestone.percent)}
+                                  onChange={(event) => setEscrowPercentInputs((prev) => ({ ...prev, [milestone.id]: event.target.value }))}
+                                  disabled={escrowBusy}
+                                />
+                                <span className="text-sm text-muted-foreground">%</span>
+                              </div>
+                            ) : (
+                              <p className="mt-3 text-xs text-muted-foreground">付款比例 {milestone.percent}%</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {escrowBundle.plan.status === 'draft' && isProjectOwner && (
+                      <div className="flex flex-col gap-3 rounded-xl bg-muted p-4 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm text-muted-foreground">
+                          确认托管后比例将锁定，后续会在甲方确认节点时释放对应款项。
+                        </p>
+                        <Button
+                          className="rounded-full"
+                          onClick={handleFundEscrowPlan}
+                          disabled={escrowBusy || escrowPercentTotal !== 100}
+                        >
+                          {escrowBusy ? "处理中..." : "确认托管（模拟）"}
+                        </Button>
+                      </div>
+                    )}
+
+                    {escrowBundle.releases.length > 0 && (
+                      <div className="rounded-xl border border-border p-4">
+                        <p className="mb-3 text-sm font-semibold text-foreground">释放流水</p>
+                        <div className="space-y-2">
+                          {escrowBundle.releases.slice(0, 5).map((release) => (
+                            <div key={release.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted p-3 text-sm">
+                              <span className="text-foreground">{release.stageLabel}</span>
+                              <span className="font-semibold text-primary">{formatCurrency(release.amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

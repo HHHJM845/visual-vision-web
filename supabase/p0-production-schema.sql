@@ -113,6 +113,28 @@ create table if not exists public.escrow_releases (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.project_contracts (
+  id text primary key default gen_random_uuid()::text,
+  commission_id bigint not null references public.commissions(id) on delete cascade,
+  commission_title text not null,
+  client_id text not null,
+  client_name text not null,
+  aigcer_id text not null,
+  aigcer_name text not null,
+  budget_text text not null,
+  delivery_format text not null,
+  milestone_summary text not null,
+  escrow_summary text not null,
+  terms text not null,
+  status text not null default 'draft'
+    check (status in ('draft', 'client_signed', 'aigcer_signed', 'active')),
+  client_signed_at timestamptz,
+  aigcer_signed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (commission_id)
+);
+
 create table if not exists public.admin_audit_logs (
   id text primary key default gen_random_uuid()::text,
   review_id text not null,
@@ -134,6 +156,8 @@ create index if not exists escrow_milestones_plan_idx on public.escrow_milestone
 create index if not exists escrow_milestones_commission_stage_idx on public.escrow_milestones(commission_id, stage_id);
 create index if not exists escrow_releases_plan_idx on public.escrow_releases(plan_id);
 create index if not exists escrow_releases_commission_idx on public.escrow_releases(commission_id);
+create index if not exists project_contracts_commission_idx on public.project_contracts(commission_id);
+create index if not exists project_contracts_status_idx on public.project_contracts(status);
 create index if not exists admin_audit_logs_created_idx on public.admin_audit_logs(created_at desc);
 
 drop trigger if exists project_progress_set_updated_at on public.project_progress;
@@ -154,6 +178,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists escrow_plans_set_updated_at on public.escrow_plans;
 create trigger escrow_plans_set_updated_at
 before update on public.escrow_plans
+for each row execute function public.set_updated_at();
+
+drop trigger if exists project_contracts_set_updated_at on public.project_contracts;
+create trigger project_contracts_set_updated_at
+before update on public.project_contracts
 for each row execute function public.set_updated_at();
 
 insert into storage.buckets (id, name, public)
@@ -180,6 +209,7 @@ alter table public.project_disputes enable row level security;
 alter table public.escrow_plans enable row level security;
 alter table public.escrow_milestones enable row level security;
 alter table public.escrow_releases enable row level security;
+alter table public.project_contracts enable row level security;
 alter table public.admin_audit_logs enable row level security;
 
 drop policy if exists "Project progress visible to project parties" on public.project_progress;
@@ -397,6 +427,43 @@ with check (
     select 1 from public.commissions c
     where c.id = escrow_releases.commission_id
       and c.author_id = auth.uid()::text
+  )
+);
+
+drop policy if exists "Project parties read contracts" on public.project_contracts;
+create policy "Project parties read contracts"
+on public.project_contracts for select
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    left join public.applications a on a.commission_id = c.id and a.status = 'accepted'
+    where c.id = project_contracts.commission_id
+      and (c.author_id = auth.uid()::text or a.aigcer_id = auth.uid()::text)
+  )
+);
+
+drop policy if exists "Project parties manage contracts" on public.project_contracts;
+create policy "Project parties manage contracts"
+on public.project_contracts for all
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    left join public.applications a on a.commission_id = c.id and a.status = 'accepted'
+    where c.id = project_contracts.commission_id
+      and (c.author_id = auth.uid()::text or a.aigcer_id = auth.uid()::text)
+  )
+)
+with check (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    left join public.applications a on a.commission_id = c.id and a.status = 'accepted'
+    where c.id = project_contracts.commission_id
+      and (c.author_id = auth.uid()::text or a.aigcer_id = auth.uid()::text)
   )
 );
 

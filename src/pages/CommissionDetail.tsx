@@ -51,6 +51,11 @@ import {
   releaseEscrowMilestone,
   updateEscrowMilestones,
 } from "@/services/escrowService";
+import {
+  createContractDraft,
+  getContractByCommission,
+  signContract,
+} from "@/services/contractService";
 import { useSmartMatch } from "@/hooks/useSmartMatch";
 
 export default function CommissionDetail() {
@@ -83,6 +88,7 @@ export default function CommissionDetail() {
   const [disputeExpectation, setDisputeExpectation] = useState("");
   const [stageActionBusy, setStageActionBusy] = useState(false);
   const [escrowBusy, setEscrowBusy] = useState(false);
+  const [contractBusy, setContractBusy] = useState(false);
   const [escrowAmountInput, setEscrowAmountInput] = useState("");
   const [escrowPercentInputs, setEscrowPercentInputs] = useState<Record<string, string>>({});
   const [, setProgressTick] = useState(0);
@@ -133,6 +139,12 @@ export default function CommissionDetail() {
   const { data: escrowBundle = null, refetch: refetchEscrow } = useQuery({
     queryKey: ['escrow', commissionId],
     queryFn: () => getEscrowBundleByCommission(commissionId),
+    enabled: Number.isFinite(commissionId) && !!acceptedApplicant,
+  });
+
+  const { data: projectContract = null, refetch: refetchContract } = useQuery({
+    queryKey: ['contract', commissionId],
+    queryFn: () => getContractByCommission(commissionId),
     enabled: Number.isFinite(commissionId) && !!acceptedApplicant,
   });
 
@@ -191,6 +203,18 @@ export default function CommissionDetail() {
   const escrowReleaseProgress = escrowBundle?.plan.totalAmount
     ? Math.round((escrowReleasedAmount / escrowBundle.plan.totalAmount) * 100)
     : 0;
+  const deliveryFormatText = commission?.format || `${commission?.category ?? '视觉内容'}交付文件`;
+  const milestoneSummaryText = projectStages.map((stage) => stage.label).join("、");
+  const escrowSummaryText = escrowBundle
+    ? `${formatCurrency(escrowBundle.plan.totalAmount)} ${escrowBundle.plan.status === 'draft' ? '待确认托管' : escrowBundle.plan.status === 'funded' ? '已模拟托管' : '已全部释放'}`
+    : "双方确认后可创建模拟托管计划";
+  const contractStatusText = projectContract?.status === 'active'
+    ? '已生效'
+    : projectContract?.status === 'client_signed'
+      ? '待乙方签署'
+      : projectContract?.status === 'aigcer_signed'
+        ? '待甲方签署'
+        : '草稿';
 
   useEffect(() => {
     if (commission && !escrowBundle && !escrowAmountInput) {
@@ -415,6 +439,47 @@ export default function CommissionDetail() {
       toast({ title: "确认托管失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
     } finally {
       setEscrowBusy(false);
+    }
+  }
+
+  async function handleCreateContractDraft() {
+    if (!commission || !acceptedApplicant || !user) return;
+
+    setContractBusy(true);
+    try {
+      await createContractDraft({
+        commissionId: commission.id,
+        commissionTitle: commission.title,
+        clientId: commission.authorId,
+        clientName: commission.authorNickname,
+        aigcerId: acceptedApplicant.aigcerId,
+        aigcerName: acceptedApplicant.aigcerNickname,
+        budgetText: commission.priceRange,
+        deliveryFormat: deliveryFormatText,
+        milestoneSummary: milestoneSummaryText,
+        escrowSummary: escrowSummaryText,
+      });
+      await refetchContract();
+      toast({ title: "合同草稿已生成", description: "双方确认条款后可分别完成模拟签署。" });
+    } catch (e: unknown) {
+      toast({ title: "生成合同失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setContractBusy(false);
+    }
+  }
+
+  async function handleSignContract(role: 'client' | 'aigcer') {
+    if (!projectContract) return;
+
+    setContractBusy(true);
+    try {
+      await signContract(projectContract.id, role);
+      await refetchContract();
+      toast({ title: "签署已记录", description: role === 'client' ? "甲方签署时间已写入合同。" : "乙方签署时间已写入合同。" });
+    } catch (e: unknown) {
+      toast({ title: "签署失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setContractBusy(false);
     }
   }
 
@@ -735,6 +800,109 @@ export default function CommissionDetail() {
                   </div>
                   <Badge className="w-fit rounded-full bg-primary text-primary-foreground">合作中</Badge>
                 </div>
+              </div>
+            )}
+
+            {acceptedApplicant && (
+              <div className="mb-6 rounded-2xl border border-border bg-card p-6 shadow-sm">
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Project Contract</p>
+                    <h2 className="mt-1 text-lg font-bold text-foreground">合作合同</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      合同签署为模拟流程，用于记录甲乙双方对项目范围、交付节点和托管付款安排的确认。
+                    </p>
+                  </div>
+                  {projectContract && (
+                    <Badge variant={projectContract.status === 'active' ? 'default' : 'outline'} className="w-fit rounded-full">
+                      {contractStatusText}
+                    </Badge>
+                  )}
+                </div>
+
+                {!projectContract ? (
+                  <div className="flex flex-col gap-4 rounded-xl bg-muted p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground">生成合同草稿后，双方可以分别确认签署。</p>
+                      <p className="mt-1">草稿会自动带入项目预算、交付格式、里程碑和当前托管说明。</p>
+                    </div>
+                    <Button
+                      className="rounded-full"
+                      onClick={handleCreateContractDraft}
+                      disabled={!isProjectOwner || contractBusy}
+                    >
+                      {contractBusy ? "处理中..." : "生成合同草稿"}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="rounded-xl bg-muted p-4">
+                        <p className="text-xs text-muted-foreground">甲方</p>
+                        <p className="mt-1 font-semibold text-foreground">{projectContract.clientName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{projectContract.clientSignedAt ? '已签署' : '待签署'}</p>
+                      </div>
+                      <div className="rounded-xl bg-muted p-4">
+                        <p className="text-xs text-muted-foreground">乙方</p>
+                        <p className="mt-1 font-semibold text-foreground">{projectContract.aigcerName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{projectContract.aigcerSignedAt ? '已签署' : '待签署'}</p>
+                      </div>
+                      <div className="rounded-xl bg-muted p-4">
+                        <p className="text-xs text-muted-foreground">项目预算</p>
+                        <p className="mt-1 font-semibold text-foreground">{projectContract.budgetText}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{contractStatusText}</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-border p-4">
+                      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                        <FileText className="h-4 w-4 text-primary" />
+                        合同摘要
+                      </div>
+                      <div className="grid gap-3 text-sm md:grid-cols-2">
+                        <div>
+                          <p className="text-xs text-muted-foreground">交付格式</p>
+                          <p className="mt-1 text-foreground">{projectContract.deliveryFormat}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">里程碑</p>
+                          <p className="mt-1 text-foreground">{projectContract.milestoneSummary}</p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <p className="text-xs text-muted-foreground">付款安排</p>
+                          <p className="mt-1 text-foreground">{projectContract.escrowSummary}</p>
+                        </div>
+                      </div>
+                      <div className="mt-4 rounded-lg bg-muted p-3 text-sm leading-6 text-muted-foreground whitespace-pre-line">
+                        {projectContract.terms}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 rounded-xl bg-muted p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        双方都完成签署后合同状态会变为已生效，后续交付和托管释放可按合同摘要推进。
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant={projectContract.clientSignedAt ? "outline" : "default"}
+                          className="rounded-full"
+                          onClick={() => handleSignContract('client')}
+                          disabled={!isProjectOwner || contractBusy || !!projectContract.clientSignedAt}
+                        >
+                          {projectContract.clientSignedAt ? "甲方已签署" : "甲方确认签署"}
+                        </Button>
+                        <Button
+                          variant={projectContract.aigcerSignedAt ? "outline" : "default"}
+                          className="rounded-full"
+                          onClick={() => handleSignContract('aigcer')}
+                          disabled={!isAcceptedAigcer || contractBusy || !!projectContract.aigcerSignedAt}
+                        >
+                          {projectContract.aigcerSignedAt ? "乙方已签署" : "乙方确认签署"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

@@ -10,7 +10,20 @@ import { matchApplicants } from '@/services/aiService';
 const mockMatch = vi.mocked(matchApplicants);
 
 const applicants = [
-  { id: 'app1', aigcerId: 'a1', commissionId: 1, aigcerNickname: 'Alice', message: '', expectedPrice: '5000', status: 'pending' as const, appliedAt: '', bio: '科幻风格', styles: ['科幻'], tools: ['MJ'] },
+  {
+    id: 'app1',
+    aigcerId: 'a1',
+    commissionId: 1,
+    aigcerNickname: 'Alice',
+    message: '',
+    expectedPrice: '5000',
+    status: 'pending' as const,
+    appliedAt: '',
+    bio: '科幻风格',
+    styles: ['科幻'],
+    tools: ['MJ'],
+    portfolio: [{ id: 'pf-1', title: '科幻短片', description: '动态影像', imageUrl: 'https://example.com/pf.jpg' }],
+  },
 ];
 
 describe('useSmartMatch', () => {
@@ -32,6 +45,11 @@ describe('useSmartMatch', () => {
       await result.current.runMatch('科幻短片', '创意短片', applicants);
     });
     expect(result.current.scores).toEqual([{ id: 'a1', score: 88 }]);
+    expect(mockMatch).toHaveBeenCalledWith(
+      '科幻短片',
+      '创意短片',
+      [expect.objectContaining({ id: 'a1', portfolio: applicants[0].portfolio })],
+    );
   });
 
   it('runMatch 不重复调用（缓存）', async () => {

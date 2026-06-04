@@ -47,7 +47,10 @@ describe('matchApplicants', () => {
         { id: 'a2', bio: '日系插画师', styles: ['日系', '可爱'], tools: ['Stable Diffusion'] },
       ]
     );
-    expect(result).toEqual([{ id: 'a1', score: 90 }, { id: 'a2', score: 60 }]);
+    expect(result).toEqual([
+      expect.objectContaining({ id: 'a1', score: 90, matchedTags: expect.any(Array), matchedPortfolioIds: expect.any(Array), reasons: expect.any(Array) }),
+      expect.objectContaining({ id: 'a2', score: 60, matchedTags: expect.any(Array), matchedPortfolioIds: expect.any(Array), reasons: expect.any(Array) }),
+    ]);
   });
 
   it('throws when response is invalid JSON', async () => {
@@ -60,6 +63,43 @@ describe('matchApplicants', () => {
   it('parses JSON wrapped in markdown code fences', async () => {
     mockDeepSeekResponse('```json\n[{"id":"a1","score":90}]\n```');
     const result = await matchApplicants('desc', 'cat', [{ id: 'a1', bio: '', styles: [], tools: [] }]);
-    expect(result).toEqual([{ id: 'a1', score: 90 }]);
+    expect(result).toEqual([
+      expect.objectContaining({ id: 'a1', score: 90, matchedTags: expect.any(Array), matchedPortfolioIds: expect.any(Array), reasons: expect.any(Array) }),
+    ]);
+  });
+
+  it('returns matched tags, portfolio evidence and reasons when DeepSeek is unavailable', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('offline'));
+
+    const result = await matchApplicants(
+      '需要赛博朋克风格的科幻产品宣传短片，包含动态影像和分镜',
+      '创意短片',
+      [
+        {
+          id: 'a1',
+          bio: '擅长科幻品牌宣传',
+          styles: ['科幻', '赛博朋克'],
+          tools: ['Runway'],
+          portfolio: [
+            {
+              id: 'pf-1',
+              title: '赛博朋克产品宣传片',
+              description: '动态影像、分镜和城市科幻镜头',
+              imageUrl: 'https://example.com/pf.jpg',
+            },
+          ],
+        },
+      ]
+    );
+
+    expect(result[0]).toMatchObject({
+      id: 'a1',
+      matchedTags: expect.arrayContaining(['赛博朋克', '科幻', '产品宣传', '动态影像', '分镜']),
+      matchedPortfolioIds: ['pf-1'],
+      reasons: expect.arrayContaining([
+        expect.stringContaining('命中标签'),
+        expect.stringContaining('匹配作品'),
+      ]),
+    });
   });
 });

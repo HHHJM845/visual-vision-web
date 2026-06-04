@@ -235,6 +235,10 @@ export default function CommissionDetail() {
     return scores?.find((item) => item.id === aigcerId)?.score ?? null;
   }
 
+  function getMatchResult(aigcerId: string) {
+    return scores?.find((item) => item.id === aigcerId) ?? null;
+  }
+
   function getRecommendation(score: number | null) {
     if (score === null) return { label: "待分析", className: "bg-muted text-muted-foreground", summary: "切换到智能推荐后会生成匹配评分。" };
     if (score >= 85) return { label: "优先沟通", className: "bg-primary text-primary-foreground", summary: "风格与需求高度契合，建议优先约定样片或节点计划。" };
@@ -243,6 +247,8 @@ export default function CommissionDetail() {
   }
 
   function getMatchReasons(applicant: typeof applicants[number]) {
+    const match = getMatchResult(applicant.aigcerId);
+    if (match?.reasons?.length) return match.reasons;
     const text = `${commission?.description ?? ""} ${commission?.category ?? ""}`;
     const styleHits = applicant.styles.filter((style) => text.includes(style));
     const toolText = applicant.tools.length ? applicant.tools.join("、") : "暂未填写工具";
@@ -251,6 +257,12 @@ export default function CommissionDetail() {
       `工具链：${toolText}`,
       applicant.bio ? `简介线索：${applicant.bio}` : "简介资料较少，建议沟通时补充案例。",
     ];
+  }
+
+  function getMatchedPortfolio(applicant: typeof applicants[number]) {
+    const match = getMatchResult(applicant.aigcerId);
+    const ids = match?.matchedPortfolioIds ?? [];
+    return applicant.portfolio.filter((item) => ids.includes(item.id));
   }
 
   async function handleApply() {
@@ -1231,6 +1243,7 @@ export default function CommissionDetail() {
                 <div className="space-y-3">
                   {sortedApplicants.map((applicant) => {
                     const score = getScore(applicant.aigcerId);
+                    const match = getMatchResult(applicant.aigcerId);
                     const recommendation = getRecommendation(score);
                     return (
                       <div key={applicant.id} className="rounded-xl border border-border p-4 transition-all duration-200 hover:border-primary/30 hover:shadow-md">
@@ -1246,7 +1259,7 @@ export default function CommissionDetail() {
                             <p className="text-sm leading-6 text-muted-foreground">{applicant.message}</p>
                             {activeTab === 'smart' && (
                               <div className="mt-3 flex flex-wrap gap-2">
-                                {getMatchReasons(applicant).slice(0, 2).map((reason) => (
+                                {(match?.matchedTags?.length ? match.matchedTags.slice(0, 3) : getMatchReasons(applicant).slice(0, 2)).map((reason) => (
                                   <span key={reason} className="rounded-full bg-accent px-3 py-1 text-xs text-accent-foreground">{reason}</span>
                                 ))}
                               </div>
@@ -1416,6 +1429,8 @@ export default function CommissionDetail() {
               </DialogHeader>
               {(() => {
                 const score = getScore(selectedApplicant.aigcerId);
+                const match = getMatchResult(selectedApplicant.aigcerId);
+                const matchedPortfolio = getMatchedPortfolio(selectedApplicant);
                 const recommendation = getRecommendation(score);
                 return (
                   <div className="space-y-5">
@@ -1435,6 +1450,13 @@ export default function CommissionDetail() {
                         </div>
                         <h3 className="text-lg font-bold text-foreground">{selectedApplicant.aigcerNickname}</h3>
                         <p className="mt-2 text-sm leading-6 text-muted-foreground">{recommendation.summary}</p>
+                        {!!match?.matchedTags?.length && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {match.matchedTags.slice(0, 6).map((tag) => (
+                              <Badge key={tag} variant="outline" className="rounded-full">{tag}</Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1454,6 +1476,23 @@ export default function CommissionDetail() {
                         );
                       })}
                     </div>
+
+                    {matchedPortfolio.length > 0 && (
+                      <div className="rounded-xl border border-border p-4">
+                        <p className="mb-3 text-sm font-semibold text-foreground">匹配作品</p>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          {matchedPortfolio.map((item) => (
+                            <div key={item.id} className="overflow-hidden rounded-xl border border-border bg-muted/30">
+                              <img src={item.imageUrl} alt={item.title} className="aspect-video w-full object-cover" />
+                              <div className="p-3">
+                                <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.description}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="rounded-xl border border-border p-4">
                       <p className="mb-3 text-sm font-semibold text-foreground">AI 判断依据</p>

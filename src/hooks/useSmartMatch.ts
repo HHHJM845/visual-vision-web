@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { matchApplicants, ApplicantInput } from '@/services/aiService';
+import { matchApplicants, ApplicantInput, MatchResult } from '@/services/aiService';
 import { ApplicantWithProfile } from '@/services/commissionService';
 
-type MatchScore = { id: string; score: number };
+type MatchScore = MatchResult;
 
 export function useSmartMatch() {
   const [isLoading, setIsLoading] = useState(false);
@@ -23,6 +23,7 @@ export function useSmartMatch() {
         bio: a.bio,
         styles: a.styles,
         tools: a.tools,
+        portfolio: a.portfolio,
       }));
       const result = await matchApplicants(commissionDescription, category, inputs);
       setScores(result);

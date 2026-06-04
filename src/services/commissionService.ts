@@ -2,6 +2,7 @@
 import { supabase } from '@/lib/supabase';
 import { Commission, Application, DeliverySubmission, ProjectDispute } from '@/types/commission';
 import { demoApplications, demoCommissions, demoUsers } from '@/data/mockData';
+import { PortfolioItem } from '@/types/user';
 
 const COMMISSIONS_KEY = 'visionai.commissions';
 const APPLICATIONS_KEY = 'visionai.applications';
@@ -911,6 +912,7 @@ export type ApplicantWithProfile = Application & {
   bio: string;
   styles: string[];
   tools: string[];
+  portfolio: PortfolioItem[];
 };
 
 export async function getApplicantsWithProfiles(
@@ -921,18 +923,19 @@ export async function getApplicantsWithProfiles(
       .from('applications')
       .select(`
         *,
-        profiles:aigcer_id (aigcer_bio, aigcer_styles, aigcer_tools)
+        profiles:aigcer_id (aigcer_bio, aigcer_styles, aigcer_tools, aigcer_portfolio)
       `)
       .eq('commission_id', commissionId);
     if (error) throw new Error(error.message);
 
     const rows = (data || []).map((row) => {
-      const profile = row.profiles as { aigcer_bio: string; aigcer_styles: string[]; aigcer_tools: string[] } | null;
+      const profile = row.profiles as { aigcer_bio: string; aigcer_styles: string[]; aigcer_tools: string[]; aigcer_portfolio: PortfolioItem[] } | null;
       return {
         ...mapApplication(row),
         bio: profile?.aigcer_bio || '',
         styles: profile?.aigcer_styles || [],
         tools: profile?.aigcer_tools || [],
+        portfolio: profile?.aigcer_portfolio || [],
       };
     });
     if (rows.length) return rows;
@@ -945,6 +948,7 @@ export async function getApplicantsWithProfiles(
           bio: profile?.bio || '',
           styles: profile?.styles || [],
           tools: profile?.tools || [],
+          portfolio: profile?.portfolio || [],
         };
       });
   }, () => localApplications()
@@ -956,6 +960,7 @@ export async function getApplicantsWithProfiles(
         bio: profile?.bio || '',
         styles: profile?.styles || [],
         tools: profile?.tools || [],
+        portfolio: profile?.portfolio || [],
       };
     }));
 }

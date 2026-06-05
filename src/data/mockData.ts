@@ -46,6 +46,90 @@ export const demoUsers: User[] = [
       ],
     },
   },
+  {
+    id: "creator-ink-motion",
+    email: "ink-motion@visionai.demo",
+    phone: "13900000011",
+    nickname: "青岚动境",
+    role: "aigcer",
+    verificationStatus: "verified",
+    createdAt: "2026-04-03T08:00:00.000Z",
+    aigcerProfile: {
+      bio: "专注国风、水墨影像和品牌文化片，擅长将传统场景、角色动态与现代产品叙事结合。",
+      styles: ["国风", "水墨", "古典东方"],
+      tools: ["Midjourney", "ComfyUI", "Kling"],
+      portfolio: [
+        {
+          id: "pf-ink-1",
+          title: "国风品牌文化片",
+          description: "水墨场景、东方角色动态与企业文化宣传",
+          imageUrl: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&h=600&fit=crop",
+        },
+        {
+          id: "pf-ink-2",
+          title: "水墨产品短片",
+          description: "古典东方风格产品宣传和动态影像",
+          imageUrl: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&h=600&fit=crop",
+        },
+      ],
+    },
+  },
+  {
+    id: "creator-anime-spark",
+    email: "anime-spark@visionai.demo",
+    phone: "13900000012",
+    nickname: "月序像素",
+    role: "aigcer",
+    verificationStatus: "verified",
+    createdAt: "2026-04-04T08:00:00.000Z",
+    aigcerProfile: {
+      bio: "二次元角色、人设动态和虚拟主播短片经验丰富，适合产品发布会、社媒短视频和角色 PV。",
+      styles: ["二次元", "日系", "角色"],
+      tools: ["Stable Diffusion", "ComfyUI", "Runway"],
+      portfolio: [
+        {
+          id: "pf-anime-1",
+          title: "虚拟主播角色 PV",
+          description: "二次元角色动态、短视频和社媒传播版本",
+          imageUrl: "https://images.unsplash.com/photo-1613376023733-0a73315d9b06?w=600&h=600&fit=crop",
+        },
+        {
+          id: "pf-anime-2",
+          title: "日系产品发布短片",
+          description: "卡通场景、角色互动和产品宣传镜头",
+          imageUrl: "https://images.unsplash.com/photo-1611457194403-d3571b6a2924?w=600&h=600&fit=crop",
+        },
+      ],
+    },
+  },
+  {
+    id: "creator-real-product",
+    email: "real-product@visionai.demo",
+    phone: "13900000013",
+    nickname: "一点光影",
+    role: "aigcer",
+    verificationStatus: "verified",
+    createdAt: "2026-04-05T08:00:00.000Z",
+    aigcerProfile: {
+      bio: "擅长写实产品宣传、数字人讲解和企业品牌片，重视镜头节奏、剪辑和商业质感。",
+      styles: ["写实", "产品宣传", "品牌宣传"],
+      tools: ["Runway", "Kling", "Midjourney"],
+      portfolio: [
+        {
+          id: "pf-real-1",
+          title: "写实产品宣传片",
+          description: "产品发布、商业宣传和剪辑成片",
+          imageUrl: "https://images.unsplash.com/photo-1611457194403-d3571b6a2924?w=600&h=600&fit=crop",
+        },
+        {
+          id: "pf-real-2",
+          title: "数字人企业讲解",
+          description: "真人写实渲染、品牌宣传和产品讲解",
+          imageUrl: "https://images.unsplash.com/photo-1535223289827-42f1e9919769?w=600&h=600&fit=crop",
+        },
+      ],
+    },
+  },
 ];
 
 export const demoCommissions: Commission[] = [

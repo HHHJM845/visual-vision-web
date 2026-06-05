@@ -78,7 +78,7 @@ export default function CommissionNew() {
     const authorVerification = user!.clientVerificationType === 'enterprise' ? 'enterprise' as const : 'realname' as const;
 
     try {
-      await createCommission({
+      const created = await createCommission({
         title: data.title,
         description: data.description,
         category: data.category,
@@ -93,8 +93,8 @@ export default function CommissionNew() {
         authorVerification,
         status: 'pending_review',
       });
-      toast({ title: "项目已提交审核", description: "管理员通过后，AIGCer 才能在项目广场看到这条需求。" });
-      navigate(`/dashboard/client`);
+      toast({ title: "项目已提交审核", description: "系统已先为你生成候选创作者推荐，审核通过后可继续沟通。" });
+      navigate(`/creators?commissionId=${created.id}`);
     } catch (e: unknown) {
       setSubmitError(e instanceof Error ? e.message : "发布失败，请稍后重试");
     }

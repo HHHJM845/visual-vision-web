@@ -26,6 +26,44 @@ export interface ReleaseEscrowMilestoneInput {
   releasedToId: string;
 }
 
+export interface FreezeEscrowMilestoneInput {
+  commissionId: number;
+  stageId: string;
+  frozenById: string;
+}
+
+export interface RefundEscrowMilestoneInput {
+  commissionId: number;
+  stageId: string;
+  refundedById: string;
+  refundToId: string;
+  note?: string;
+}
+
+export interface PartiallyReleaseEscrowMilestoneInput {
+  commissionId: number;
+  stageId: string;
+  releasedById: string;
+  releasedToId: string;
+  refundToId: string;
+  releaseAmount: number;
+  note?: string;
+}
+
+export function getDefaultEscrowAmount(priceRange?: string): number {
+  const text = (priceRange ?? '').replace(/,/g, '');
+  const matches = Array.from(text.matchAll(/(\d+(?:\.\d+)?)\s*(万|w|k)?/gi));
+  if (!matches.length) return 0;
+
+  return Math.max(...matches.map((match) => {
+    const value = Number(match[1]);
+    const unit = match[2]?.toLowerCase();
+    if (unit === '万' || unit === 'w') return value * 10000;
+    if (unit === 'k') return value * 1000;
+    return value;
+  }));
+}
+
 function readStored<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
   const raw = window.localStorage.getItem(key);
@@ -186,6 +224,8 @@ function mapRelease(row: DbRow): EscrowRelease {
     amount: Number(row.amount),
     releasedById: row.released_by_id as string,
     releasedToId: row.released_to_id as string,
+    releaseType: (row.release_type as EscrowRelease['releaseType']) || 'release',
+    note: row.note as string | undefined,
     createdAt: row.created_at as string,
   };
 }
@@ -231,8 +271,27 @@ function releaseToRow(release: EscrowRelease) {
     amount: release.amount,
     released_by_id: release.releasedById,
     released_to_id: release.releasedToId,
+    release_type: release.releaseType,
+    note: release.note ?? null,
     created_at: release.createdAt,
   };
+}
+
+function isFinalMilestoneStatus(status: EscrowMilestone['status']) {
+  return status === 'released' || status === 'refunded' || status === 'partially_released';
+}
+
+function creatorReleasedAmount(releases: EscrowRelease[], planId: string) {
+  return Number(releases
+    .filter((item) => item.planId === planId && item.releaseType !== 'refund')
+    .reduce((sum, item) => sum + item.amount, 0)
+    .toFixed(2));
+}
+
+function nextPlanStatusForMilestones(plan: EscrowPlan, milestones: EscrowMilestone[]) {
+  if (milestones.some((item) => item.status === 'frozen')) return 'frozen';
+  if (milestones.length > 0 && milestones.every((item) => isFinalMilestoneStatus(item.status))) return 'completed';
+  return plan.status === 'draft' ? 'draft' : 'funded';
 }
 
 function createLocalEscrowDraft(input: CreateEscrowDraftInput): EscrowBundle {
@@ -411,12 +470,16 @@ export async function getEscrowBundleByCommission(commissionId: number): Promise
 export async function releaseEscrowMilestone(input: ReleaseEscrowMilestoneInput): Promise<EscrowBundle> {
   const plan = localPlans().find((item) => item.commissionId === input.commissionId);
   if (!plan) throw new Error('托管计划不存在');
+  if (plan.status === 'frozen') throw new Error('当前节点款项因纠纷已冻结');
   if (plan.status !== 'funded' && plan.status !== 'completed') throw new Error('托管计划尚未确认');
 
   const milestones = localMilestones().filter((item) => item.planId === plan.id);
   const milestone = milestones.find((item) => item.stageId === input.stageId);
   if (!milestone) throw new Error('托管节点不存在');
   if (milestone.status === 'released') return bundleForPlanLocal(plan);
+  if (milestone.status === 'frozen') throw new Error('当前节点款项因纠纷已冻结');
+  if (milestone.status === 'refunded') throw new Error('当前节点款项已退款');
+  if (milestone.status === 'partially_released') throw new Error('当前节点款项已完成部分释放');
 
   const now = new Date().toISOString();
   const release: EscrowRelease = {
@@ -429,6 +492,7 @@ export async function releaseEscrowMilestone(input: ReleaseEscrowMilestoneInput)
     amount: milestone.amount,
     releasedById: input.releasedById,
     releasedToId: input.releasedToId,
+    releaseType: 'release',
     createdAt: now,
   };
 
@@ -436,28 +500,211 @@ export async function releaseEscrowMilestone(input: ReleaseEscrowMilestoneInput)
     item.id === milestone.id ? { ...item, status: 'released' as const, releasedAt: now } : item
   ));
   saveLocalMilestones(updatedMilestones);
+  const updatedReleases = [release, ...localReleases()];
 
   const milestonesForPlan = updatedMilestones.filter((item) => item.planId === plan.id);
-  const releasedAmount = Number(milestonesForPlan
-    .filter((item) => item.status === 'released')
-    .reduce((sum, item) => sum + item.amount, 0)
-    .toFixed(2));
-  const completed = milestonesForPlan.every((item) => item.status === 'released');
+  const completed = milestonesForPlan.every((item) => isFinalMilestoneStatus(item.status));
   const updatedPlan: EscrowPlan = {
     ...plan,
-    releasedAmount,
+    releasedAmount: creatorReleasedAmount(updatedReleases, plan.id),
     status: completed ? 'completed' : 'funded',
     completedAt: completed ? now : plan.completedAt,
     updatedAt: now,
   };
 
   saveLocalPlans(localPlans().map((item) => (item.id === plan.id ? updatedPlan : item)));
-  saveLocalReleases([release, ...localReleases()]);
+  saveLocalReleases(updatedReleases);
 
   return withFallback(async () => {
     await updateRemoteMilestones(updatedPlan, updatedMilestones.filter((item) => item.planId === plan.id));
     await updateRemotePlan(updatedPlan);
     await insertRemoteRelease(release);
+    return bundleForPlanLocal(updatedPlan);
+  }, () => bundleForPlanLocal(updatedPlan));
+}
+
+export async function freezeEscrowMilestone(input: FreezeEscrowMilestoneInput): Promise<EscrowBundle> {
+  const plan = localPlans().find((item) => item.commissionId === input.commissionId);
+  if (!plan) throw new Error('托管计划不存在');
+  if (plan.status === 'draft') throw new Error('托管计划尚未确认');
+  if (plan.status === 'completed') throw new Error('托管计划已全部释放');
+  if (plan.status === 'cancelled') throw new Error('托管计划已取消');
+
+  const milestones = localMilestones().filter((item) => item.planId === plan.id);
+  const milestone = milestones.find((item) => item.stageId === input.stageId);
+  if (!milestone) throw new Error('托管节点不存在');
+  if (milestone.status === 'released' || milestone.status === 'refunded') return bundleForPlanLocal(plan);
+
+  const now = new Date().toISOString();
+  const updatedPlan: EscrowPlan = {
+    ...plan,
+    status: 'frozen',
+    updatedAt: now,
+  };
+  const updatedMilestones = localMilestones().map((item) => (
+    item.id === milestone.id ? { ...item, status: 'frozen' as const } : item
+  ));
+
+  saveLocalPlans(localPlans().map((item) => (item.id === plan.id ? updatedPlan : item)));
+  saveLocalMilestones(updatedMilestones);
+
+  return withFallback(async () => {
+    await updateRemoteMilestones(updatedPlan, updatedMilestones.filter((item) => item.planId === plan.id));
+    await updateRemotePlan(updatedPlan);
+    return bundleForPlanLocal(updatedPlan);
+  }, () => bundleForPlanLocal(updatedPlan));
+}
+
+export async function resumeFrozenEscrowMilestone(input: FreezeEscrowMilestoneInput): Promise<EscrowBundle> {
+  const plan = localPlans().find((item) => item.commissionId === input.commissionId);
+  if (!plan) throw new Error('托管计划不存在');
+
+  const milestones = localMilestones().filter((item) => item.planId === plan.id);
+  const milestone = milestones.find((item) => item.stageId === input.stageId);
+  if (!milestone) throw new Error('托管节点不存在');
+  if (milestone.status !== 'frozen') return bundleForPlanLocal(plan);
+
+  const stillFrozen = milestones.some((item) => item.id !== milestone.id && item.status === 'frozen');
+  const now = new Date().toISOString();
+  const updatedPlan: EscrowPlan = {
+    ...plan,
+    status: stillFrozen ? 'frozen' : 'funded',
+    updatedAt: now,
+  };
+  const updatedMilestones = localMilestones().map((item) => (
+    item.id === milestone.id ? { ...item, status: 'pending' as const } : item
+  ));
+
+  saveLocalPlans(localPlans().map((item) => (item.id === plan.id ? updatedPlan : item)));
+  saveLocalMilestones(updatedMilestones);
+
+  return withFallback(async () => {
+    await updateRemoteMilestones(updatedPlan, updatedMilestones.filter((item) => item.planId === plan.id));
+    await updateRemotePlan(updatedPlan);
+    return bundleForPlanLocal(updatedPlan);
+  }, () => bundleForPlanLocal(updatedPlan));
+}
+
+export async function refundEscrowMilestone(input: RefundEscrowMilestoneInput): Promise<EscrowBundle> {
+  const plan = localPlans().find((item) => item.commissionId === input.commissionId);
+  if (!plan) throw new Error('托管计划不存在');
+  if (plan.status === 'draft') throw new Error('托管计划尚未确认');
+  if (plan.status === 'cancelled') throw new Error('托管计划已取消');
+
+  const milestones = localMilestones().filter((item) => item.planId === plan.id);
+  const milestone = milestones.find((item) => item.stageId === input.stageId);
+  if (!milestone) throw new Error('托管节点不存在');
+  if (isFinalMilestoneStatus(milestone.status)) return bundleForPlanLocal(plan);
+
+  const now = new Date().toISOString();
+  const refund: EscrowRelease = {
+    id: generateId('escrow-refund'),
+    planId: plan.id,
+    commissionId: plan.commissionId,
+    milestoneId: milestone.id,
+    stageId: milestone.stageId,
+    stageLabel: milestone.stageLabel,
+    amount: milestone.amount,
+    releasedById: input.refundedById,
+    releasedToId: input.refundToId,
+    releaseType: 'refund',
+    note: input.note?.trim() || undefined,
+    createdAt: now,
+  };
+
+  const updatedMilestones = localMilestones().map((item) => (
+    item.id === milestone.id ? { ...item, status: 'refunded' as const, releasedAt: now } : item
+  ));
+  const updatedReleases = [refund, ...localReleases()];
+  const milestonesForPlan = updatedMilestones.filter((item) => item.planId === plan.id);
+  const completed = milestonesForPlan.every((item) => isFinalMilestoneStatus(item.status));
+  const updatedPlan: EscrowPlan = {
+    ...plan,
+    releasedAmount: creatorReleasedAmount(updatedReleases, plan.id),
+    status: completed ? 'completed' : nextPlanStatusForMilestones(plan, milestonesForPlan),
+    completedAt: completed ? now : plan.completedAt,
+    updatedAt: now,
+  };
+
+  saveLocalPlans(localPlans().map((item) => (item.id === plan.id ? updatedPlan : item)));
+  saveLocalMilestones(updatedMilestones);
+  saveLocalReleases(updatedReleases);
+
+  return withFallback(async () => {
+    await updateRemoteMilestones(updatedPlan, updatedMilestones.filter((item) => item.planId === plan.id));
+    await updateRemotePlan(updatedPlan);
+    await insertRemoteRelease(refund);
+    return bundleForPlanLocal(updatedPlan);
+  }, () => bundleForPlanLocal(updatedPlan));
+}
+
+export async function partiallyReleaseEscrowMilestone(input: PartiallyReleaseEscrowMilestoneInput): Promise<EscrowBundle> {
+  const plan = localPlans().find((item) => item.commissionId === input.commissionId);
+  if (!plan) throw new Error('托管计划不存在');
+  if (plan.status === 'draft') throw new Error('托管计划尚未确认');
+  if (plan.status === 'cancelled') throw new Error('托管计划已取消');
+
+  const milestones = localMilestones().filter((item) => item.planId === plan.id);
+  const milestone = milestones.find((item) => item.stageId === input.stageId);
+  if (!milestone) throw new Error('托管节点不存在');
+  if (isFinalMilestoneStatus(milestone.status)) return bundleForPlanLocal(plan);
+  if (!Number.isFinite(input.releaseAmount) || input.releaseAmount <= 0) throw new Error('释放金额必须大于 0');
+  if (input.releaseAmount >= milestone.amount) throw new Error('部分释放金额必须小于当前节点金额');
+
+  const now = new Date().toISOString();
+  const release: EscrowRelease = {
+    id: generateId('escrow-partial-release'),
+    planId: plan.id,
+    commissionId: plan.commissionId,
+    milestoneId: milestone.id,
+    stageId: milestone.stageId,
+    stageLabel: milestone.stageLabel,
+    amount: Number(input.releaseAmount.toFixed(2)),
+    releasedById: input.releasedById,
+    releasedToId: input.releasedToId,
+    releaseType: 'partial_release',
+    note: input.note?.trim() || undefined,
+    createdAt: now,
+  };
+  const refundAmount = Number((milestone.amount - release.amount).toFixed(2));
+  const refund: EscrowRelease = {
+    id: generateId('escrow-refund'),
+    planId: plan.id,
+    commissionId: plan.commissionId,
+    milestoneId: milestone.id,
+    stageId: milestone.stageId,
+    stageLabel: milestone.stageLabel,
+    amount: refundAmount,
+    releasedById: input.releasedById,
+    releasedToId: input.refundToId,
+    releaseType: 'refund',
+    note: input.note?.trim() ? `部分释放后退款：${input.note.trim()}` : '部分释放后的剩余退款',
+    createdAt: now,
+  };
+
+  const updatedMilestones = localMilestones().map((item) => (
+    item.id === milestone.id ? { ...item, status: 'partially_released' as const, releasedAt: now } : item
+  ));
+  const updatedReleases = [refund, release, ...localReleases()];
+  const milestonesForPlan = updatedMilestones.filter((item) => item.planId === plan.id);
+  const completed = milestonesForPlan.every((item) => isFinalMilestoneStatus(item.status));
+  const updatedPlan: EscrowPlan = {
+    ...plan,
+    releasedAmount: creatorReleasedAmount(updatedReleases, plan.id),
+    status: completed ? 'completed' : nextPlanStatusForMilestones(plan, milestonesForPlan),
+    completedAt: completed ? now : plan.completedAt,
+    updatedAt: now,
+  };
+
+  saveLocalPlans(localPlans().map((item) => (item.id === plan.id ? updatedPlan : item)));
+  saveLocalMilestones(updatedMilestones);
+  saveLocalReleases(updatedReleases);
+
+  return withFallback(async () => {
+    await updateRemoteMilestones(updatedPlan, updatedMilestones.filter((item) => item.planId === plan.id));
+    await updateRemotePlan(updatedPlan);
+    await insertRemoteRelease(release);
+    await insertRemoteRelease(refund);
     return bundleForPlanLocal(updatedPlan);
   }, () => bundleForPlanLocal(updatedPlan));
 }

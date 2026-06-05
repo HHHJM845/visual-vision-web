@@ -9,6 +9,7 @@ import Commissions from "./pages/Commissions";
 import CommissionDetail from "./pages/CommissionDetail";
 import CommissionEdit from "./pages/CommissionEdit";
 import CommissionNew from "./pages/CommissionNew";
+import Creators from "./pages/Creators";
 import Gallery from "./pages/Gallery";
 import Showcase from "./pages/Showcase";
 import Events from "./pages/Events";
@@ -53,6 +54,7 @@ const App = () => (
             <Route path="/commissions/new" element={<CommissionNew />} />
             <Route path="/commissions/:id/edit" element={<CommissionEdit />} />
             <Route path="/commissions/:id" element={<CommissionDetail />} />
+            <Route path="/creators" element={<Creators />} />
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/showcase" element={<Showcase />} />
             <Route path="/events" element={<Events />} />

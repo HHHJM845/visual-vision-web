@@ -56,12 +56,47 @@ create table if not exists public.project_deliverables (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.project_delivery_comments (
+  id text primary key default gen_random_uuid()::text,
+  commission_id bigint not null references public.commissions(id) on delete cascade,
+  delivery_id text not null references public.project_deliverables(id) on delete cascade,
+  stage_id text not null,
+  author_id text not null,
+  author_name text not null,
+  author_role text not null check (author_role in ('aigcer', 'client', 'admin')),
+  body text not null,
+  comment_type text not null default 'note'
+    check (comment_type in ('note', 'change_request', 'approval')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.project_messages (
+  id text primary key default gen_random_uuid()::text,
+  commission_id bigint not null references public.commissions(id) on delete cascade,
+  sender_id text not null,
+  sender_name text not null,
+  sender_role text not null check (sender_role in ('aigcer', 'client', 'admin')),
+  recipient_id text not null,
+  recipient_name text not null,
+  recipient_role text not null check (recipient_role in ('aigcer', 'client', 'admin')),
+  body text not null default '',
+  attachment_file_name text,
+  attachment_file_url text,
+  attachment_mime_type text,
+  attachment_size bigint check (attachment_size is null or attachment_size >= 0),
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.project_disputes (
   id text primary key default gen_random_uuid()::text,
   commission_id bigint not null references public.commissions(id) on delete cascade,
   commission_title text not null,
   stage_id text,
   stage_label text,
+  delivery_id text,
+  delivery_version integer,
+  delivery_title text,
   applicant_id text,
   applicant_name text,
   reporter_id text not null,
@@ -70,16 +105,58 @@ create table if not exists public.project_disputes (
   expectation text not null,
   status text not null default 'pending'
     check (status in ('pending', 'processing', 'resolved', 'rejected')),
+  resolution_action text check (
+    resolution_action is null
+    or resolution_action in ('resume', 'reject_resume', 'refund', 'partial_release', 'request_changes')
+  ),
+  resolution_note text,
+  resolved_by_id text,
+  resolved_by_name text,
+  resolved_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.project_disputes
+  add column if not exists delivery_id text;
+
+alter table public.project_disputes
+  add column if not exists delivery_version integer;
+
+alter table public.project_disputes
+  add column if not exists delivery_title text;
+
+alter table public.project_disputes
+  add column if not exists resolution_action text;
+
+alter table public.project_disputes
+  add column if not exists resolution_note text;
+
+alter table public.project_disputes
+  add column if not exists resolved_by_id text;
+
+alter table public.project_disputes
+  add column if not exists resolved_by_name text;
+
+alter table public.project_disputes
+  add column if not exists resolved_at timestamptz;
+
+alter table public.project_disputes
+  drop constraint if exists project_disputes_resolution_action_check;
+
+alter table public.project_disputes
+  add constraint project_disputes_resolution_action_check
+  check (
+    resolution_action is null
+    or resolution_action in ('resume', 'reject_resume', 'refund', 'partial_release', 'request_changes')
+  );
 
 create table if not exists public.escrow_plans (
   id text primary key default gen_random_uuid()::text,
   commission_id bigint not null references public.commissions(id) on delete cascade,
   total_amount numeric not null check (total_amount > 0),
   currency text not null default 'CNY',
-  status text not null default 'draft' check (status in ('draft', 'funded', 'completed')),
+  status text not null default 'draft' check (status in ('draft', 'funded', 'frozen', 'completed', 'cancelled')),
   released_amount numeric not null default 0,
   created_by_id text not null,
   funded_at timestamptz,
@@ -96,7 +173,7 @@ create table if not exists public.escrow_milestones (
   stage_label text not null,
   percent numeric not null check (percent >= 0),
   amount numeric not null check (amount >= 0),
-  status text not null default 'pending' check (status in ('pending', 'released')),
+  status text not null default 'pending' check (status in ('pending', 'released', 'frozen', 'refunded')),
   released_at timestamptz
 );
 
@@ -110,8 +187,38 @@ create table if not exists public.escrow_releases (
   amount numeric not null check (amount >= 0),
   released_by_id text not null,
   released_to_id text not null,
+  release_type text not null default 'release'
+    check (release_type in ('release', 'partial_release', 'refund')),
+  note text,
   created_at timestamptz not null default now()
 );
+
+alter table public.escrow_releases
+  add column if not exists release_type text not null default 'release';
+
+alter table public.escrow_releases
+  add column if not exists note text;
+
+alter table public.escrow_releases
+  drop constraint if exists escrow_releases_release_type_check;
+
+alter table public.escrow_releases
+  add constraint escrow_releases_release_type_check
+  check (release_type in ('release', 'partial_release', 'refund'));
+
+alter table public.escrow_plans
+  drop constraint if exists escrow_plans_status_check;
+
+alter table public.escrow_plans
+  add constraint escrow_plans_status_check
+  check (status in ('draft', 'funded', 'frozen', 'completed', 'cancelled'));
+
+alter table public.escrow_milestones
+  drop constraint if exists escrow_milestones_status_check;
+
+alter table public.escrow_milestones
+  add constraint escrow_milestones_status_check
+  check (status in ('pending', 'released', 'frozen', 'refunded'));
 
 create table if not exists public.project_contracts (
   id text primary key default gen_random_uuid()::text,
@@ -149,7 +256,14 @@ create table if not exists public.admin_audit_logs (
 
 create index if not exists project_deliverables_commission_idx on public.project_deliverables(commission_id);
 create index if not exists project_deliverables_stage_idx on public.project_deliverables(commission_id, stage_id);
+create index if not exists project_delivery_comments_commission_idx on public.project_delivery_comments(commission_id);
+create index if not exists project_delivery_comments_delivery_idx on public.project_delivery_comments(delivery_id);
+create index if not exists project_delivery_comments_stage_idx on public.project_delivery_comments(commission_id, stage_id);
+create index if not exists project_messages_commission_created_idx on public.project_messages(commission_id, created_at);
+create index if not exists project_messages_sender_idx on public.project_messages(sender_id);
+create index if not exists project_messages_recipient_idx on public.project_messages(recipient_id);
 create index if not exists project_disputes_commission_idx on public.project_disputes(commission_id);
+create index if not exists project_disputes_delivery_idx on public.project_disputes(commission_id, delivery_id);
 create index if not exists project_disputes_status_idx on public.project_disputes(status);
 create index if not exists escrow_plans_commission_idx on public.escrow_plans(commission_id);
 create index if not exists escrow_milestones_plan_idx on public.escrow_milestones(plan_id);
@@ -168,6 +282,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists project_deliverables_set_updated_at on public.project_deliverables;
 create trigger project_deliverables_set_updated_at
 before update on public.project_deliverables
+for each row execute function public.set_updated_at();
+
+drop trigger if exists project_delivery_comments_set_updated_at on public.project_delivery_comments;
+create trigger project_delivery_comments_set_updated_at
+before update on public.project_delivery_comments
 for each row execute function public.set_updated_at();
 
 drop trigger if exists project_disputes_set_updated_at on public.project_disputes;
@@ -189,6 +308,10 @@ insert into storage.buckets (id, name, public)
 values ('project-deliverables', 'project-deliverables', true)
 on conflict (id) do update set public = excluded.public;
 
+insert into storage.buckets (id, name, public)
+values ('project-message-files', 'project-message-files', true)
+on conflict (id) do update set public = excluded.public;
+
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -205,6 +328,8 @@ $$;
 
 alter table public.project_progress enable row level security;
 alter table public.project_deliverables enable row level security;
+alter table public.project_delivery_comments enable row level security;
+alter table public.project_messages enable row level security;
 alter table public.project_disputes enable row level security;
 alter table public.escrow_plans enable row level security;
 alter table public.escrow_milestones enable row level security;
@@ -295,6 +420,88 @@ with check (
     select 1 from public.commissions c
     where c.id = project_deliverables.commission_id
       and c.author_id = auth.uid()::text
+  )
+);
+
+drop policy if exists "Project parties read delivery comments" on public.project_delivery_comments;
+create policy "Project parties read delivery comments"
+on public.project_delivery_comments for select
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    left join public.applications a on a.commission_id = c.id and a.status = 'accepted'
+    where c.id = project_delivery_comments.commission_id
+      and (c.author_id = auth.uid()::text or a.aigcer_id = auth.uid()::text)
+  )
+);
+
+drop policy if exists "Project parties create delivery comments" on public.project_delivery_comments;
+create policy "Project parties create delivery comments"
+on public.project_delivery_comments for insert
+to authenticated
+with check (
+  author_id = auth.uid()::text
+  and exists (
+    select 1 from public.project_deliverables d
+    where d.id = project_delivery_comments.delivery_id
+      and d.commission_id = project_delivery_comments.commission_id
+      and d.stage_id = project_delivery_comments.stage_id
+  )
+  and (
+    public.is_admin()
+    or exists (
+      select 1 from public.commissions c
+      left join public.applications a on a.commission_id = c.id and a.status = 'accepted'
+      where c.id = project_delivery_comments.commission_id
+        and (c.author_id = auth.uid()::text or a.aigcer_id = auth.uid()::text)
+    )
+  )
+);
+
+drop policy if exists "Project candidates read project messages" on public.project_messages;
+create policy "Project candidates read project messages"
+on public.project_messages for select
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1 from public.commissions c
+    left join public.applications a
+      on a.commission_id = c.id
+      and a.status in ('pending', 'accepted')
+    where c.id = project_messages.commission_id
+      and (
+        c.author_id = auth.uid()::text
+        or a.aigcer_id = auth.uid()::text
+      )
+  )
+);
+
+drop policy if exists "Project candidates create project messages" on public.project_messages;
+create policy "Project candidates create project messages"
+on public.project_messages for insert
+to authenticated
+with check (
+  sender_id = auth.uid()::text
+  and (
+    public.is_admin()
+    or exists (
+      select 1 from public.commissions c
+      left join public.applications a
+        on a.commission_id = c.id
+        and a.status in ('pending', 'accepted')
+      where c.id = project_messages.commission_id
+        and (
+          c.author_id = auth.uid()::text
+          or a.aigcer_id = auth.uid()::text
+        )
+        and (
+          recipient_id = c.author_id
+          or recipient_id = a.aigcer_id
+        )
+    )
   )
 );
 
@@ -490,6 +697,18 @@ create policy "Project parties upload deliverable files"
 on storage.objects for insert
 to authenticated
 with check (bucket_id = 'project-deliverables');
+
+drop policy if exists "Project message files are public" on storage.objects;
+create policy "Project message files are public"
+on storage.objects for select
+to public
+using (bucket_id = 'project-message-files');
+
+drop policy if exists "Project parties upload message files" on storage.objects;
+create policy "Project parties upload message files"
+on storage.objects for insert
+to authenticated
+with check (bucket_id = 'project-message-files');
 
 -- Production admin bootstrap:
 -- 1. Create the admin user in Supabase Auth.

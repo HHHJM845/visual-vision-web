@@ -1,4 +1,5 @@
 // src/types/commission.ts
+import type { UserRole } from './user';
 export interface Commission {
   id: number;
   title: string;
@@ -57,7 +58,24 @@ export interface DeliverySubmission {
   updatedAt: string;
 }
 
+export type DeliveryReviewCommentType = 'note' | 'change_request' | 'approval';
+
+export interface DeliveryReviewComment {
+  id: string;
+  commissionId: number;
+  deliveryId: string;
+  stageId: string;
+  authorId: string;
+  authorName: string;
+  authorRole: UserRole;
+  body: string;
+  commentType: DeliveryReviewCommentType;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type DisputeStatus = 'pending' | 'processing' | 'resolved' | 'rejected';
+export type DisputeResolutionAction = 'resume' | 'reject_resume' | 'refund' | 'partial_release' | 'request_changes';
 
 export interface ProjectDispute {
   id: string;
@@ -65,6 +83,9 @@ export interface ProjectDispute {
   commissionTitle: string;
   stageId?: string;
   stageLabel?: string;
+  deliveryId?: string;
+  deliveryVersion?: number;
+  deliveryTitle?: string;
   applicantId?: string;
   applicantName?: string;
   reporterId: string;
@@ -72,6 +93,11 @@ export interface ProjectDispute {
   reason: string;
   expectation: string;
   status: DisputeStatus;
+  resolutionAction?: DisputeResolutionAction;
+  resolutionNote?: string;
+  resolvedById?: string;
+  resolvedByName?: string;
+  resolvedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

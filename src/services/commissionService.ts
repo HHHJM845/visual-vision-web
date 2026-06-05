@@ -1,6 +1,6 @@
 // src/services/commissionService.ts
 import { supabase } from '@/lib/supabase';
-import { Commission, Application, DeliverySubmission, ProjectDispute } from '@/types/commission';
+import { Commission, Application, DeliverySubmission, DeliveryReviewComment, ProjectDispute } from '@/types/commission';
 import { demoApplications, demoCommissions, demoUsers } from '@/data/mockData';
 import { PortfolioItem } from '@/types/user';
 
@@ -8,6 +8,7 @@ const COMMISSIONS_KEY = 'visionai.commissions';
 const APPLICATIONS_KEY = 'visionai.applications';
 const PROJECT_PROGRESS_KEY = 'visionai.projectProgress';
 const PROJECT_DELIVERIES_KEY = 'visionai.projectDeliveries';
+const PROJECT_DELIVERY_COMMENTS_KEY = 'visionai.projectDeliveryComments';
 const PROJECT_DISPUTES_KEY = 'visionai.projectDisputes';
 const isSupabaseConfigured =
   Boolean(import.meta.env.VITE_SUPABASE_URL) &&
@@ -55,17 +56,52 @@ export interface StageChangeRequestInput {
   requestedById: string;
 }
 
+export interface DisputeRevisionRequestInput extends StageChangeRequestInput {
+  stageId: ProjectStageId | string;
+  deliveryId?: string;
+}
+
+export interface DeliveryReviewCommentInput {
+  commissionId: number;
+  deliveryId: string;
+  stageId: string;
+  authorId: string;
+  authorName: string;
+  authorRole: DeliveryReviewComment['authorRole'];
+  body: string;
+  commentType?: DeliveryReviewComment['commentType'];
+}
+
 export interface ProjectDisputeInput {
   commissionId: number;
   commissionTitle: string;
   stageId?: string;
   stageLabel?: string;
+  deliveryId?: string;
+  deliveryVersion?: number;
+  deliveryTitle?: string;
   applicantId?: string;
   applicantName?: string;
   reporterId: string;
   reporterName: string;
   reason: string;
   expectation: string;
+}
+
+const INVITATION_PREFIX = '项目邀约：';
+const INVITATION_RESPONSE_PREFIX = '已回应邀约：';
+
+export function isProjectInvitationApplication(application?: Pick<Application, 'message' | 'status'> | null) {
+  return application?.status === 'pending'
+    && (application.message.startsWith(INVITATION_PREFIX) || application.message.startsWith(INVITATION_RESPONSE_PREFIX));
+}
+
+export function hasProjectInvitationResponse(application?: Pick<Application, 'message' | 'status'> | null) {
+  return application?.status === 'pending' && application.message.startsWith(INVITATION_RESPONSE_PREFIX);
+}
+
+export function formatProjectInvitationResponse(response: string) {
+  return `${INVITATION_RESPONSE_PREFIX}${response.trim()}`;
 }
 
 function readStored<T>(key: string, fallback: T): T {
@@ -115,6 +151,14 @@ function localDeliveries(): DeliverySubmission[] {
 
 function saveLocalDeliveries(deliveries: DeliverySubmission[]) {
   writeStored(PROJECT_DELIVERIES_KEY, deliveries);
+}
+
+function localDeliveryComments(): DeliveryReviewComment[] {
+  return readStored<DeliveryReviewComment[]>(PROJECT_DELIVERY_COMMENTS_KEY, []);
+}
+
+function saveLocalDeliveryComments(comments: DeliveryReviewComment[]) {
+  writeStored(PROJECT_DELIVERY_COMMENTS_KEY, comments);
 }
 
 function localDisputes(): ProjectDispute[] {
@@ -184,6 +228,22 @@ function mapDelivery(row: Record<string, unknown>): DeliverySubmission {
   };
 }
 
+function mapDeliveryReviewComment(row: Record<string, unknown>): DeliveryReviewComment {
+  return {
+    id: row.id as string,
+    commissionId: Number(row.commission_id),
+    deliveryId: row.delivery_id as string,
+    stageId: row.stage_id as string,
+    authorId: row.author_id as string,
+    authorName: row.author_name as string,
+    authorRole: row.author_role as DeliveryReviewComment['authorRole'],
+    body: row.body as string,
+    commentType: (row.comment_type as DeliveryReviewComment['commentType']) || 'note',
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
 function mapDispute(row: Record<string, unknown>): ProjectDispute {
   return {
     id: row.id as string,
@@ -191,6 +251,9 @@ function mapDispute(row: Record<string, unknown>): ProjectDispute {
     commissionTitle: row.commission_title as string,
     stageId: row.stage_id as string | undefined,
     stageLabel: row.stage_label as string | undefined,
+    deliveryId: row.delivery_id as string | undefined,
+    deliveryVersion: row.delivery_version === null || row.delivery_version === undefined ? undefined : Number(row.delivery_version),
+    deliveryTitle: row.delivery_title as string | undefined,
     applicantId: row.applicant_id as string | undefined,
     applicantName: row.applicant_name as string | undefined,
     reporterId: row.reporter_id as string,
@@ -198,6 +261,11 @@ function mapDispute(row: Record<string, unknown>): ProjectDispute {
     reason: row.reason as string,
     expectation: row.expectation as string,
     status: row.status as ProjectDispute['status'],
+    resolutionAction: row.resolution_action as ProjectDispute['resolutionAction'],
+    resolutionNote: row.resolution_note as string | undefined,
+    resolvedById: row.resolved_by_id as string | undefined,
+    resolvedByName: row.resolved_by_name as string | undefined,
+    resolvedAt: row.resolved_at as string | undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -277,6 +345,63 @@ export async function getProjectDeliveries(commissionId: number): Promise<Delive
   }, () => localDeliveries().filter((item) => item.commissionId === commissionId));
 }
 
+export async function getDeliveryReviewComments(commissionId: number): Promise<DeliveryReviewComment[]> {
+  return withFallback(async () => {
+    const { data, error } = await supabase
+      .from('project_delivery_comments')
+      .select('*')
+      .eq('commission_id', commissionId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    const rows = (data || []).map(mapDeliveryReviewComment);
+    return rows.length ? rows : localDeliveryComments().filter((item) => item.commissionId === commissionId);
+  }, () => localDeliveryComments().filter((item) => item.commissionId === commissionId));
+}
+
+export async function addDeliveryReviewComment(input: DeliveryReviewCommentInput): Promise<DeliveryReviewComment> {
+  const body = input.body.trim();
+  if (!body) throw new Error('请填写批注内容');
+  const now = new Date().toISOString();
+  const commentType = input.commentType ?? 'note';
+
+  return withFallback(async () => {
+    const { data, error } = await supabase
+      .from('project_delivery_comments')
+      .insert({
+        commission_id: input.commissionId,
+        delivery_id: input.deliveryId,
+        stage_id: input.stageId,
+        author_id: input.authorId,
+        author_name: input.authorName,
+        author_role: input.authorRole,
+        body,
+        comment_type: commentType,
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    const comment = mapDeliveryReviewComment(data);
+    saveLocalDeliveryComments([comment, ...localDeliveryComments().filter((item) => item.id !== comment.id)]);
+    return comment;
+  }, () => {
+    const comment: DeliveryReviewComment = {
+      id: `delivery-comment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      commissionId: input.commissionId,
+      deliveryId: input.deliveryId,
+      stageId: input.stageId,
+      authorId: input.authorId,
+      authorName: input.authorName,
+      authorRole: input.authorRole,
+      body,
+      commentType,
+      createdAt: now,
+      updatedAt: now,
+    };
+    saveLocalDeliveryComments([comment, ...localDeliveryComments()]);
+    return comment;
+  });
+}
+
 export async function submitProjectStageDelivery(
   commissionId: number,
   input: StageSubmissionInput,
@@ -322,7 +447,7 @@ export async function submitProjectStageDelivery(
     return { progress, delivery };
   }, () => {
     const delivery: DeliverySubmission = {
-      id: `delivery-${Date.now()}`,
+      id: `delivery-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       commissionId,
       stageId: stage.id,
       stageLabel: stage.label,
@@ -390,6 +515,55 @@ export async function requestProjectStageChanges(
   });
 }
 
+export async function requestDisputeDeliveryRevision(
+  commissionId: number,
+  input: DisputeRevisionRequestInput,
+): Promise<ProjectProgress> {
+  const stage = projectStages.find((item) => item.id === input.stageId);
+  if (!stage) throw new Error('纠纷未关联有效交付节点');
+
+  const current = getProjectProgress(commissionId);
+  const preferredDelivery = input.deliveryId
+    ? localDeliveries().find((item) => item.id === input.deliveryId && item.commissionId === commissionId)
+    : undefined;
+  const fallbackDelivery = localDeliveries()
+    .filter((item) => item.commissionId === commissionId && item.stageId === stage.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  const activeDeliveryId = input.deliveryId ?? current.activeDeliveryId ?? preferredDelivery?.id ?? fallbackDelivery?.id;
+  if (!activeDeliveryId) throw new Error('当前节点没有可要求修改的交付物');
+
+  const now = new Date().toISOString();
+  const nextProgress: ProjectProgress = {
+    ...current,
+    commissionId,
+    currentStage: stage.id,
+    stageStatus: 'waiting_aigcer',
+    activeDeliveryId,
+    revisionCount: (current.revisionCount ?? 0) + 1,
+    updatedAt: now,
+  };
+
+  return withFallback(async () => {
+    const { error } = await supabase
+      .from('project_deliverables')
+      .update({
+        status: 'changes_requested',
+        feedback: input.feedback,
+        updated_at: now,
+      })
+      .eq('id', activeDeliveryId);
+    if (error) throw new Error(error.message);
+    return saveProgressRemote(nextProgress);
+  }, () => {
+    saveLocalDeliveries(localDeliveries().map((item) => (
+      item.id === activeDeliveryId
+        ? { ...item, status: 'changes_requested', feedback: input.feedback, updatedAt: now }
+        : item
+    )));
+    return saveProjectProgress(nextProgress);
+  });
+}
+
 export async function confirmProjectStageDelivery(
   commissionId: number,
   confirmedById: string,
@@ -452,6 +626,9 @@ export async function createProjectDispute(input: ProjectDisputeInput): Promise<
         commission_title: input.commissionTitle,
         stage_id: input.stageId ?? null,
         stage_label: input.stageLabel ?? null,
+        delivery_id: input.deliveryId ?? null,
+        delivery_version: input.deliveryVersion ?? null,
+        delivery_title: input.deliveryTitle ?? null,
         applicant_id: input.applicantId ?? null,
         applicant_name: input.applicantName ?? null,
         reporter_id: input.reporterId,
@@ -468,7 +645,7 @@ export async function createProjectDispute(input: ProjectDisputeInput): Promise<
     return dispute;
   }, () => {
     const dispute: ProjectDispute = {
-      id: `dispute-${Date.now()}`,
+      id: `dispute-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       ...input,
       status: 'pending',
       createdAt: now,
@@ -753,6 +930,34 @@ export async function applyToCommission(
     )));
     return application;
   });
+}
+
+export async function inviteCreatorToCommission(
+  commission: Commission,
+  creatorId: string,
+  creatorNickname: string,
+  invitedById: string,
+): Promise<Application> {
+  if (commission.authorId !== invitedById) {
+    throw new Error('仅项目发布方可以邀约创作者');
+  }
+  if (commission.status === 'closed') {
+    throw new Error('项目已关闭，不能继续邀约创作者');
+  }
+
+  const message = [
+    `项目邀约：${commission.authorNickname} 邀请你参与「${commission.title}」。`,
+    `需求方向：${commission.category}，预算范围：${commission.priceRange}。`,
+    '系统根据你的作品标签与项目需求生成了匹配推荐，可进入项目详情查看并沟通合作安排。',
+  ].join('\n');
+
+  return applyToCommission(
+    commission.id,
+    creatorId,
+    creatorNickname,
+    message,
+    commission.priceRange,
+  );
 }
 
 export async function getApplicationsByAigcer(aigcerId: string): Promise<Application[]> {

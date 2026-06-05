@@ -60,6 +60,15 @@ describe('escrowService', () => {
     expect(draft.milestones.reduce((sum, item) => sum + item.amount, 0)).toBe(10000);
   });
 
+  it('derives a default escrow amount from budget text', async () => {
+    const { getDefaultEscrowAmount } = await import('@/services/escrowService');
+
+    expect(getDefaultEscrowAmount('¥3k ~ 8k')).toBe(8000);
+    expect(getDefaultEscrowAmount('¥500 ~ 2k')).toBe(2000);
+    expect(getDefaultEscrowAmount('1.5w - 3万')).toBe(30000);
+    expect(getDefaultEscrowAmount('待议')).toBe(0);
+  });
+
   it('returns an existing draft instead of creating duplicate plans for the same commission', async () => {
     const { createEscrowDraft } = await import('@/services/escrowService');
 
@@ -116,6 +125,102 @@ describe('escrowService', () => {
     expect(second.releases).toHaveLength(1);
     expect(second.plan.releasedAmount).toBe(first.plan.releasedAmount);
     expect(second.milestones[0].status).toBe('released');
+  });
+
+  it('freezes a disputed milestone and blocks release until resumed', async () => {
+    const {
+      createEscrowDraft,
+      freezeEscrowMilestone,
+      fundEscrowPlan,
+      releaseEscrowMilestone,
+      resumeFrozenEscrowMilestone,
+    } = await import('@/services/escrowService');
+
+    const draft = await createEscrowDraft({ commissionId: 1, totalAmount: 10000, createdById: 'client-1' });
+    await fundEscrowPlan(draft.plan.id);
+
+    const frozen = await freezeEscrowMilestone({
+      commissionId: 1,
+      stageId: draft.milestones[0].stageId,
+      frozenById: 'client-1',
+    });
+
+    expect(frozen.plan.status).toBe('frozen');
+    expect(frozen.milestones[0].status).toBe('frozen');
+    await expect(releaseEscrowMilestone({
+      commissionId: 1,
+      stageId: draft.milestones[0].stageId,
+      releasedById: 'client-1',
+      releasedToId: 'aigcer-1',
+    })).rejects.toThrow('当前节点款项因纠纷已冻结');
+
+    const resumed = await resumeFrozenEscrowMilestone({
+      commissionId: 1,
+      stageId: draft.milestones[0].stageId,
+      frozenById: 'admin-1',
+    });
+
+    expect(resumed.plan.status).toBe('funded');
+    expect(resumed.milestones[0].status).toBe('pending');
+  });
+
+  it('refunds a disputed milestone without increasing creator released amount', async () => {
+    const {
+      createEscrowDraft,
+      freezeEscrowMilestone,
+      fundEscrowPlan,
+      refundEscrowMilestone,
+    } = await import('@/services/escrowService');
+
+    const draft = await createEscrowDraft({ commissionId: 1, totalAmount: 11000, createdById: 'client-1' });
+    await fundEscrowPlan(draft.plan.id);
+    await freezeEscrowMilestone({ commissionId: 1, stageId: draft.milestones[0].stageId, frozenById: 'client-1' });
+
+    const refunded = await refundEscrowMilestone({
+      commissionId: 1,
+      stageId: draft.milestones[0].stageId,
+      refundedById: 'admin-1',
+      refundToId: 'client-1',
+      note: '裁定首节点退款',
+    });
+
+    expect(refunded.plan.status).toBe('funded');
+    expect(refunded.plan.releasedAmount).toBe(0);
+    expect(refunded.milestones[0].status).toBe('refunded');
+    expect(refunded.releases[0]).toMatchObject({
+      releaseType: 'refund',
+      releasedToId: 'client-1',
+      amount: draft.milestones[0].amount,
+    });
+  });
+
+  it('partially releases a disputed milestone and refunds the remainder', async () => {
+    const {
+      createEscrowDraft,
+      freezeEscrowMilestone,
+      fundEscrowPlan,
+      partiallyReleaseEscrowMilestone,
+    } = await import('@/services/escrowService');
+
+    const draft = await createEscrowDraft({ commissionId: 1, totalAmount: 11000, createdById: 'client-1' });
+    await fundEscrowPlan(draft.plan.id);
+    await freezeEscrowMilestone({ commissionId: 1, stageId: draft.milestones[0].stageId, frozenById: 'client-1' });
+
+    const partial = await partiallyReleaseEscrowMilestone({
+      commissionId: 1,
+      stageId: draft.milestones[0].stageId,
+      releasedById: 'admin-1',
+      releasedToId: 'aigcer-1',
+      refundToId: 'client-1',
+      releaseAmount: 500,
+      note: '已完成部分工作',
+    });
+
+    expect(partial.plan.status).toBe('funded');
+    expect(partial.plan.releasedAmount).toBe(500);
+    expect(partial.milestones[0].status).toBe('partially_released');
+    expect(partial.releases.map((item) => item.releaseType)).toEqual(['refund', 'partial_release']);
+    expect(partial.releases.find((item) => item.releaseType === 'refund')?.amount).toBe(draft.milestones[0].amount - 500);
   });
 
   it('marks the plan completed after all milestones are released', async () => {

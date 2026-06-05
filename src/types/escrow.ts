@@ -1,5 +1,6 @@
-export type EscrowPlanStatus = 'draft' | 'funded' | 'completed';
-export type EscrowMilestoneStatus = 'pending' | 'released';
+export type EscrowPlanStatus = 'draft' | 'funded' | 'frozen' | 'completed' | 'cancelled';
+export type EscrowMilestoneStatus = 'pending' | 'released' | 'frozen' | 'refunded' | 'partially_released';
+export type EscrowReleaseType = 'release' | 'partial_release' | 'refund';
 
 export interface EscrowPlan {
   id: string;
@@ -37,6 +38,8 @@ export interface EscrowRelease {
   amount: number;
   releasedById: string;
   releasedToId: string;
+  releaseType: EscrowReleaseType;
+  note?: string;
   createdAt: string;
 }
 

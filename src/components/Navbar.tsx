@@ -12,6 +12,7 @@ import { User } from "@/types/user";
 
 const navItems = [
   { label: "项目", path: "/commissions" },
+  { label: "创作者", path: "/creators" },
   { label: "橱窗", path: "/showcase" },
   { label: "影片", path: "/gallery" },
   { label: "活动", path: "/events" },

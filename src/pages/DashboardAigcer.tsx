@@ -160,6 +160,13 @@ export default function DashboardAigcer() {
     return { stage, status };
   }
 
+  function applicationStatusLabel(app: Application) {
+    if (app.status === "accepted") return "合作中";
+    if (app.status === "rejected") return "未选中";
+    if (app.status === "withdrawn") return "已撤回";
+    return app.message.startsWith("项目邀约：") ? "收到邀约" : "已应征";
+  }
+
   function renderTodos() {
     return (
       <div className="mb-6 rounded-xl border border-border bg-card p-5">
@@ -257,8 +264,8 @@ export default function DashboardAigcer() {
                 <ErrorState onAction={() => refetch()} />
               ) : appDetails.length === 0 ? (
                 <EmptyState
-                  title="还没有应征过项目"
-                  description="去项目广场寻找合适需求，应征后的状态会同步到这里。"
+                  title="还没有应征或收到邀约"
+                  description="去项目广场寻找合适需求，或等待需求方通过创作者广场向你发起邀约。"
                   actionLabel="去找项目"
                   onAction={() => navigate("/commissions")}
                 />
@@ -279,7 +286,7 @@ export default function DashboardAigcer() {
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                         app.status === "accepted" ? "bg-yellow-100 text-yellow-700" : "bg-blue-100 text-blue-700"
                       }`}>
-                        {app.status === "accepted" ? "合作中" : app.status === "rejected" ? "未选中" : "已应征"}
+                        {applicationStatusLabel(app)}
                       </span>
                       {app.status === "accepted" && (
                         <div className="mt-3">

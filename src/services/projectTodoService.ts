@@ -86,7 +86,16 @@ export function buildClientTodos(input: ClientTodoInput): ProjectTodo[] {
       });
     }
 
-    if (progress?.stageStatus === 'waiting_owner') {
+    if (escrow?.plan.status === 'frozen') {
+      todos.push({
+        id: `escrow-frozen-${commission.id}`,
+        ...todoBase(commission),
+        title: '等待平台处理纠纷',
+        description: '当前节点款项已冻结，请等待后台处理结果后再继续确认交付。',
+        actionLabel: '查看纠纷',
+        priority: 5,
+      });
+    } else if (progress?.stageStatus === 'waiting_owner') {
       const stage = projectStages.find((item) => item.id === progress.currentStage);
       todos.push({
         id: `delivery-confirm-${commission.id}-${progress.currentStage}`,

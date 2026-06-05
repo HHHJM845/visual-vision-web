@@ -1,9 +1,23 @@
 import { demoCommissions, demoUsers, eventItems, showcaseItems } from "@/data/mockData";
-import { Commission, ProjectDispute } from "@/types/commission";
+import { requestDisputeDeliveryRevision } from "@/services/commissionService";
+import { createProjectNotification } from "@/services/engagementService";
+import {
+  partiallyReleaseEscrowMilestone,
+  refundEscrowMilestone,
+  resumeFrozenEscrowMilestone,
+} from "@/services/escrowService";
+import { Commission, DisputeResolutionAction as ProjectDisputeResolutionAction, ProjectDispute } from "@/types/commission";
 import { User, VerificationStatus } from "@/types/user";
 
 export type ReviewType = "verification" | "project" | "portfolio" | "showcase" | "event" | "dispute";
 export type ReviewStatus = "pending" | "verified" | "rejected" | "needs_changes";
+export type DisputeResolutionAction = ProjectDisputeResolutionAction;
+
+export interface DisputeResolutionInput {
+  action: DisputeResolutionAction;
+  note: string;
+  releaseAmount?: number;
+}
 
 export interface ReviewItem {
   id: string;
@@ -56,6 +70,14 @@ const typeLabels: Record<ReviewType, string> = {
   showcase: "橱窗服务审核",
   event: "活动报名审核",
   dispute: "投诉/纠纷处理",
+};
+
+const disputeResolutionLabels: Record<DisputeResolutionAction, string> = {
+  resume: "恢复托管，继续验收",
+  reject_resume: "驳回纠纷并恢复托管",
+  refund: "全额退款当前节点",
+  partial_release: "部分释放，剩余退款",
+  request_changes: "要求补交付，继续冻结",
 };
 
 function canUseStorage() {
@@ -269,6 +291,10 @@ export function getReviewTypeLabel(type: ReviewType) {
   return typeLabels[type];
 }
 
+export function getDisputeResolutionLabel(action: DisputeResolutionAction) {
+  return disputeResolutionLabels[action];
+}
+
 export function listReviewItems(type?: ReviewType, status?: ReviewStatus | "all") {
   const users = readUsers().filter((user) => user.role !== "admin");
   const items = [
@@ -361,4 +387,153 @@ export function updateReviewStatus(id: string, action: ReviewStatus, note: strin
   };
   writeList(AUDIT_LOG_KEY, [log, ...listAuditLogs()]);
   return { ...item, status: action };
+}
+
+function writeReviewStatus(id: string, action: ReviewStatus) {
+  const statusMap = readMap();
+  statusMap[id] = action;
+  writeMap(statusMap);
+}
+
+function updateDisputeState(
+  disputeId: string,
+  status: ProjectDispute['status'],
+  resolution?: {
+    action: DisputeResolutionAction;
+    note: string;
+    operator: User;
+  },
+) {
+  const now = new Date().toISOString();
+  const disputes = readDisputes().map((dispute) => (
+    dispute.id === disputeId
+      ? {
+          ...dispute,
+          status,
+          resolutionAction: resolution?.action ?? dispute.resolutionAction,
+          resolutionNote: resolution?.note ?? dispute.resolutionNote,
+          resolvedById: resolution?.operator.id ?? dispute.resolvedById,
+          resolvedByName: resolution?.operator.nickname ?? dispute.resolvedByName,
+          resolvedAt: resolution ? now : dispute.resolvedAt,
+          updatedAt: now,
+        }
+      : dispute
+  ));
+  writeList(PROJECT_DISPUTES_KEY, disputes);
+}
+
+function createAuditLog(item: ReviewItem, action: ReviewStatus, note: string, operator: User) {
+  const log: AuditLogItem = {
+    id: `audit-${Date.now()}`,
+    reviewId: item.id,
+    reviewTitle: item.title,
+    type: item.type,
+    action,
+    operatorId: operator.id,
+    operatorName: operator.nickname,
+    note,
+    createdAt: new Date().toISOString(),
+  };
+  writeList(AUDIT_LOG_KEY, [log, ...listAuditLogs()]);
+  return log;
+}
+
+function notifyDisputeResolution(commission: Commission, dispute: ProjectDispute, title: string, description: string) {
+  createProjectNotification({
+    title,
+    description,
+    targetPath: `/commissions/${commission.id}`,
+    recipientId: commission.authorId,
+    recipientRole: "client",
+    actionLabel: "查看项目",
+    priority: "high",
+  });
+
+  if (dispute.applicantId) {
+    createProjectNotification({
+      title,
+      description,
+      targetPath: `/commissions/${commission.id}`,
+      recipientId: dispute.applicantId,
+      recipientRole: "aigcer",
+      actionLabel: "查看项目",
+      priority: "high",
+    });
+  }
+}
+
+export async function resolveDisputeReview(
+  id: string,
+  resolution: DisputeResolutionInput,
+  operator: User,
+) {
+  const item = getReviewItem(id);
+  if (!item) throw new Error("审核项不存在");
+  if (item.type !== "dispute") throw new Error("该审核项不是纠纷处理");
+  if (!resolution.note.trim()) throw new Error("处理纠纷必须填写裁决说明");
+
+  const dispute = readDisputes().find((entry) => entry.id === item.targetId);
+  if (!dispute) throw new Error("纠纷记录不存在");
+  if (!dispute.stageId) throw new Error("纠纷未关联交付节点");
+
+  const commission = readCommissions().find((entry) => entry.id === dispute.commissionId);
+  if (!commission) throw new Error("项目不存在");
+
+  const note = `${getDisputeResolutionLabel(resolution.action)}：${resolution.note.trim()}`;
+  let reviewStatus: ReviewStatus = "verified";
+  let disputeStatus: ProjectDispute['status'] = "resolved";
+
+  if (resolution.action === "resume" || resolution.action === "reject_resume") {
+    await resumeFrozenEscrowMilestone({
+      commissionId: dispute.commissionId,
+      stageId: dispute.stageId,
+      frozenById: operator.id,
+    });
+    reviewStatus = resolution.action === "reject_resume" ? "rejected" : "verified";
+    disputeStatus = resolution.action === "reject_resume" ? "rejected" : "resolved";
+  } else if (resolution.action === "refund") {
+    await refundEscrowMilestone({
+      commissionId: dispute.commissionId,
+      stageId: dispute.stageId,
+      refundedById: operator.id,
+      refundToId: commission.authorId,
+      note,
+    });
+  } else if (resolution.action === "partial_release") {
+    if (!dispute.applicantId) throw new Error("纠纷未关联创作者，无法部分释放");
+    const releaseAmount = Number(resolution.releaseAmount);
+    await partiallyReleaseEscrowMilestone({
+      commissionId: dispute.commissionId,
+      stageId: dispute.stageId,
+      releasedById: operator.id,
+      releasedToId: dispute.applicantId,
+      refundToId: commission.authorId,
+      releaseAmount,
+      note,
+    });
+  } else if (resolution.action === "request_changes") {
+    await requestDisputeDeliveryRevision(dispute.commissionId, {
+      stageId: dispute.stageId,
+      deliveryId: dispute.deliveryId,
+      requestedById: operator.id,
+      feedback: note,
+    });
+    reviewStatus = "needs_changes";
+    disputeStatus = "processing";
+  }
+
+  writeReviewStatus(item.id, reviewStatus);
+  updateDisputeState(dispute.id, disputeStatus, {
+    action: resolution.action,
+    note,
+    operator,
+  });
+  createAuditLog(item, reviewStatus, note, operator);
+  notifyDisputeResolution(
+    commission,
+    dispute,
+    resolution.action === "request_changes" ? "纠纷裁决：需要补交付" : "纠纷裁决已更新",
+    `「${commission.title}」的纠纷处理结果：${note}`,
+  );
+  return { ...item, status: reviewStatus };
 }

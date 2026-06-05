@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BadgeCheck, BrainCircuit, CheckCircle, ChevronLeft, FileText, Gauge, Loader2, MessageCircle, Pencil, ShieldAlert, Share2, Sparkles, Star, Trash2, UploadCloud, UserRound, WandSparkles, XCircle } from "lucide-react";
+import { AlertTriangle, BadgeCheck, BrainCircuit, CheckCircle, ChevronLeft, FileText, Gauge, Loader2, MessageCircle, Paperclip, Pencil, Send, ShieldAlert, Share2, Sparkles, Star, Trash2, UploadCloud, UserRound, WandSparkles, XCircle } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { EmptyState, ErrorState, PageLoading } from "@/components/StateViews";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,17 +25,22 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import {
+  addDeliveryReviewComment,
   applyToCommission,
   closeCommission,
   confirmProjectStage,
   confirmProjectStageDelivery,
   createProjectDispute,
   deleteCommission,
+  formatProjectInvitationResponse,
   getApplicantsWithProfiles,
   getCommissionById,
+  getDeliveryReviewComments,
   getProjectDeliveries,
   getProjectDisputes,
   getProjectProgress,
+  hasProjectInvitationResponse,
+  isProjectInvitationApplication,
   projectStages,
   requestProjectStageChanges,
   submitProjectStage,
@@ -46,7 +52,9 @@ import {
 import { createProjectNotification } from "@/services/engagementService";
 import {
   createEscrowDraft,
+  freezeEscrowMilestone,
   fundEscrowPlan,
+  getDefaultEscrowAmount,
   getEscrowBundleByCommission,
   releaseEscrowMilestone,
   updateEscrowMilestones,
@@ -56,7 +64,10 @@ import {
   getContractByCommission,
   signContract,
 } from "@/services/contractService";
+import { getProjectMessagesByCommission, sendProjectMessage } from "@/services/projectMessageService";
 import { useSmartMatch } from "@/hooks/useSmartMatch";
+import type { DeliveryReviewComment, DeliverySubmission, DisputeResolutionAction, DisputeStatus, ProjectDispute } from "@/types/commission";
+import type { EscrowMilestoneStatus, EscrowPlanStatus } from "@/types/escrow";
 
 export default function CommissionDetail() {
   const { id } = useParams();
@@ -77,10 +88,21 @@ export default function CommissionDetail() {
   const [editApplicationMessage, setEditApplicationMessage] = useState("");
   const [editApplicationPrice, setEditApplicationPrice] = useState("");
   const [withdrawTargetId, setWithdrawTargetId] = useState<string | null>(null);
+  const [invitationOpen, setInvitationOpen] = useState(false);
+  const [invitationResponse, setInvitationResponse] = useState("");
+  const [invitationPrice, setInvitationPrice] = useState("");
+  const [projectMessageText, setProjectMessageText] = useState("");
+  const [projectMessageFile, setProjectMessageFile] = useState<File | null>(null);
+  const [projectMessageRecipientId, setProjectMessageRecipientId] = useState("");
+  const [projectMessageBusy, setProjectMessageBusy] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [deliveryTitle, setDeliveryTitle] = useState("");
   const [deliveryDescription, setDeliveryDescription] = useState("");
   const [deliveryFile, setDeliveryFile] = useState<File | null>(null);
+  const [reviewDeliveryId, setReviewDeliveryId] = useState<string | null>(null);
+  const [deliveryReviewText, setDeliveryReviewText] = useState("");
+  const [deliveryReviewType, setDeliveryReviewType] = useState<DeliveryReviewComment['commentType']>('note');
+  const [deliveryReviewBusy, setDeliveryReviewBusy] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
   const [disputeOpen, setDisputeOpen] = useState(false);
@@ -112,9 +134,21 @@ export default function CommissionDetail() {
     enabled: Number.isFinite(commissionId),
   });
 
+  const { data: deliveryReviewComments = [], refetch: refetchDeliveryReviewComments } = useQuery({
+    queryKey: ['delivery-review-comments', commissionId],
+    queryFn: () => getDeliveryReviewComments(commissionId),
+    enabled: Number.isFinite(commissionId),
+  });
+
   const { data: disputes = [], refetch: refetchDisputes } = useQuery({
     queryKey: ['project-disputes', commissionId],
     queryFn: () => getProjectDisputes(commissionId),
+    enabled: Number.isFinite(commissionId),
+  });
+
+  const { data: projectMessages = [], refetch: refetchProjectMessages } = useQuery({
+    queryKey: ['project-messages', commissionId],
+    queryFn: () => getProjectMessagesByCommission(commissionId),
     enabled: Number.isFinite(commissionId),
   });
 
@@ -135,6 +169,9 @@ export default function CommissionDetail() {
   const isExpired = commission ? new Date(commission.deadline).getTime() < Date.now() : false;
   const selectedApplicant = applicants.find((applicant) => applicant.id === selectedApplicantId) ?? null;
   const acceptedApplicant = applicants.find((applicant) => applicant.status === 'accepted') ?? null;
+  const currentUserApplication = user ? applicants.find((applicant) => applicant.aigcerId === user.id) ?? null : null;
+  const currentUserHasInvitation = isProjectInvitationApplication(currentUserApplication);
+  const currentUserRespondedInvitation = hasProjectInvitationResponse(currentUserApplication);
 
   const { data: escrowBundle = null, refetch: refetchEscrow } = useQuery({
     queryKey: ['escrow', commissionId],
@@ -152,20 +189,77 @@ export default function CommissionDetail() {
   const isAcceptedAigcer = !!user && !!acceptedApplicant && user.id === acceptedApplicant.aigcerId;
   const isClosed = commission?.status === 'closed';
   const isPendingReview = commission?.status === 'pending_review';
+  const isEscrowFrozen = escrowBundle?.plan.status === 'frozen';
   const canViewApplicantPanel = isProjectOwner || user?.role === 'admin';
+  const messageCandidates = useMemo(
+    () => applicants.filter((applicant) => applicant.status === 'pending' || applicant.status === 'accepted'),
+    [applicants],
+  );
+  const selectedMessageCandidate = messageCandidates.find((applicant) => applicant.aigcerId === projectMessageRecipientId)
+    ?? acceptedApplicant
+    ?? messageCandidates[0]
+    ?? null;
+  const projectMessagePeer = !commission || !user
+    ? null
+    : isProjectOwner
+      ? selectedMessageCandidate
+        ? { id: selectedMessageCandidate.aigcerId, name: selectedMessageCandidate.aigcerNickname, role: "aigcer" as const }
+        : null
+      : currentUserApplication || isAcceptedAigcer
+        ? { id: commission.authorId, name: commission.authorNickname, role: "client" as const }
+        : null;
+  const canUseProjectMessages = !!commission && !!user && !!projectMessagePeer && (
+    isProjectOwner || isAcceptedAigcer || !!currentUserApplication
+  );
+  const visibleProjectMessages = useMemo(() => {
+    if (!user || !projectMessagePeer) return [];
+    return projectMessages.filter((message) => (
+      (message.senderId === user.id && message.recipientId === projectMessagePeer.id)
+      || (message.senderId === projectMessagePeer.id && message.recipientId === user.id)
+    ));
+  }, [projectMessagePeer, projectMessages, user]);
   const progress = commission ? getProjectProgress(commission.id) : null;
   const currentStageIndex = progress ? projectStages.findIndex((stage) => stage.id === progress.currentStage) : 0;
   const currentStage = projectStages[Math.max(currentStageIndex, 0)];
   const nextStage = projectStages[Math.min(currentStageIndex + 1, projectStages.length - 1)];
   const progressCompleted = progress?.stageStatus === 'completed';
   const canSubmitStage = !!acceptedApplicant && !!commission && isAcceptedAigcer && progress?.stageStatus === 'waiting_aigcer';
-  const canConfirmStage = !!acceptedApplicant && !!commission && isProjectOwner && progress?.stageStatus === 'waiting_owner';
+  const canConfirmStage = !!acceptedApplicant && !!commission && isProjectOwner && progress?.stageStatus === 'waiting_owner' && !isEscrowFrozen;
   const canActOnStage = canSubmitStage || canConfirmStage;
   const currentDelivery = progress?.activeDeliveryId
     ? deliveries.find((item) => item.id === progress.activeDeliveryId) ?? null
     : deliveries.find((item) => item.stageId === progress?.currentStage && item.status === 'submitted') ?? null;
+  const reviewDelivery = deliveries.find((item) => item.id === reviewDeliveryId) ?? null;
+  const reviewDeliveryComments = useMemo(
+    () => deliveryReviewComments.filter((comment) => comment.deliveryId === reviewDeliveryId),
+    [deliveryReviewComments, reviewDeliveryId],
+  );
+  const deliveryCommentCounts = useMemo(() => deliveryReviewComments.reduce<Record<string, number>>((counts, comment) => {
+    counts[comment.deliveryId] = (counts[comment.deliveryId] ?? 0) + 1;
+    return counts;
+  }, {}), [deliveryReviewComments]);
+  const deliveryLatestComments = useMemo(() => deliveryReviewComments.reduce<Record<string, DeliveryReviewComment>>((latest, comment) => {
+    const current = latest[comment.deliveryId];
+    if (!current || new Date(comment.createdAt).getTime() > new Date(current.createdAt).getTime()) {
+      latest[comment.deliveryId] = comment;
+    }
+    return latest;
+  }, {}), [deliveryReviewComments]);
+  const deliveryDisputesById = useMemo(() => {
+    const grouped = deliveries.reduce<Record<string, ProjectDispute[]>>((records, delivery) => {
+      const linked = disputes
+        .filter((dispute) => isDisputeLinkedToDelivery(dispute, delivery))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      if (linked.length) records[delivery.id] = linked;
+      return records;
+    }, {});
+    return grouped;
+  }, [deliveries, disputes]);
+  const reviewDeliveryDisputes = reviewDelivery ? deliveryDisputesById[reviewDelivery.id] ?? [] : [];
   const progressActionLabel = progressCompleted
     ? '流程已完成'
+    : isEscrowFrozen
+      ? '等待纠纷处理'
     : canSubmitStage
       ? currentStage.aigcerAction
       : canConfirmStage
@@ -175,20 +269,93 @@ export default function CommissionDetail() {
           : '等待乙方提交';
   const progressStatusText = progressCompleted
     ? '全部交付节点已确认完成。'
+    : isEscrowFrozen
+      ? '当前节点款项因纠纷冻结，等待平台后台处理。'
     : progress?.stageStatus === 'waiting_owner'
       ? '乙方已提交当前节点，等待甲方反馈或确认。'
       : '当前节点等待乙方提报交付内容。';
 
-  function parseBudgetAmount(priceRange?: string) {
-    const text = priceRange ?? "";
-    const nums = text.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? [];
-    if (!nums.length) return 0;
-    const max = Math.max(...nums);
-    return /k/i.test(text) ? max * 1000 : max;
-  }
-
   function formatCurrency(amount: number) {
     return `¥${Math.round(amount).toLocaleString("zh-CN")}`;
+  }
+
+  function formatMessageTime(value: string) {
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  }
+
+  function formatFileSize(size?: number) {
+    if (!size) return "";
+    if (size < 1024) return `${size}B`;
+    if (size < 1024 * 1024) return `${Math.round(size / 1024)}KB`;
+    return `${(size / 1024 / 1024).toFixed(1)}MB`;
+  }
+
+  function getDeliveryReviewTypeLabel(type: DeliveryReviewComment['commentType']) {
+    if (type === 'change_request') return '修改要求';
+    if (type === 'approval') return '确认意见';
+    return '普通批注';
+  }
+
+  function getEscrowPlanStatusLabel(status: EscrowPlanStatus) {
+    if (status === 'completed') return '已结算完成';
+    if (status === 'funded') return '已托管';
+    if (status === 'frozen') return '纠纷冻结中';
+    if (status === 'cancelled') return '已取消';
+    return '待确认托管';
+  }
+
+  function getEscrowMilestoneStatusLabel(status: EscrowMilestoneStatus) {
+    if (status === 'released') return '已释放';
+    if (status === 'frozen') return '已冻结';
+    if (status === 'refunded') return '已退款';
+    if (status === 'partially_released') return '部分释放';
+    return '待释放';
+  }
+
+  function getEscrowReleaseTypeLabel(type?: string) {
+    if (type === 'refund') return '退款';
+    if (type === 'partial_release') return '部分释放';
+    return '释放';
+  }
+
+  function getDisputeStatusLabel(status: DisputeStatus) {
+    if (status === 'resolved') return '已处理';
+    if (status === 'rejected') return '已驳回';
+    if (status === 'processing') return '处理中';
+    return '待处理';
+  }
+
+  function getDisputeResolutionLabel(action?: DisputeResolutionAction) {
+    if (action === 'resume') return '恢复托管';
+    if (action === 'reject_resume') return '驳回并恢复';
+    if (action === 'refund') return '全额退款';
+    if (action === 'partial_release') return '部分释放';
+    if (action === 'request_changes') return '要求补交付';
+    return '等待平台裁决';
+  }
+
+  function isDisputeLinkedToDelivery(dispute: ProjectDispute, delivery: DeliverySubmission) {
+    if (dispute.deliveryId) return dispute.deliveryId === delivery.id;
+    return dispute.stageId === delivery.stageId;
+  }
+
+  function hasOpenDispute(items: ProjectDispute[]) {
+    return items.some((item) => item.status === 'pending' || item.status === 'processing');
+  }
+
+  function getDeliveryDisputeLabel(items: ProjectDispute[]) {
+    if (hasOpenDispute(items)) return '纠纷处理中';
+    return '纠纷已裁决';
+  }
+
+  function getDisputeDeliveryLabel(dispute: ProjectDispute) {
+    const stage = dispute.stageLabel || '未关联节点';
+    return dispute.deliveryVersion ? `${stage} V${dispute.deliveryVersion}` : stage;
   }
 
   const escrowPercentTotal = useMemo(() => {
@@ -206,7 +373,7 @@ export default function CommissionDetail() {
   const deliveryFormatText = commission?.format || `${commission?.category ?? '视觉内容'}交付文件`;
   const milestoneSummaryText = projectStages.map((stage) => stage.label).join("、");
   const escrowSummaryText = escrowBundle
-    ? `${formatCurrency(escrowBundle.plan.totalAmount)} ${escrowBundle.plan.status === 'draft' ? '待确认托管' : escrowBundle.plan.status === 'funded' ? '已模拟托管' : '已全部释放'}`
+    ? `${formatCurrency(escrowBundle.plan.totalAmount)} ${escrowBundle.plan.status === 'draft' ? '待确认托管' : escrowBundle.plan.status === 'funded' ? '已模拟托管' : escrowBundle.plan.status === 'frozen' ? '纠纷冻结中' : escrowBundle.plan.status === 'completed' ? '已结算完成' : '已取消'}`
     : "双方确认后可创建模拟托管计划";
   const contractStatusText = projectContract?.status === 'active'
     ? '已生效'
@@ -218,7 +385,7 @@ export default function CommissionDetail() {
 
   useEffect(() => {
     if (commission && !escrowBundle && !escrowAmountInput) {
-      const amount = parseBudgetAmount(commission.priceRange);
+      const amount = getDefaultEscrowAmount(commission.priceRange);
       if (amount > 0) setEscrowAmountInput(String(amount));
     }
   }, [commission, escrowBundle, escrowAmountInput]);
@@ -230,6 +397,19 @@ export default function CommissionDetail() {
       escrowBundle.milestones.map((milestone) => [milestone.id, String(milestone.percent)])
     ));
   }, [escrowBundle]);
+
+  useEffect(() => {
+    if (!isProjectOwner) return;
+    if (messageCandidates.length === 0) {
+      if (projectMessageRecipientId) setProjectMessageRecipientId("");
+      return;
+    }
+
+    const preferredId = acceptedApplicant?.aigcerId ?? messageCandidates[0].aigcerId;
+    if (!messageCandidates.some((item) => item.aigcerId === projectMessageRecipientId)) {
+      setProjectMessageRecipientId(preferredId);
+    }
+  }, [acceptedApplicant?.aigcerId, isProjectOwner, messageCandidates, projectMessageRecipientId]);
 
   function getScore(aigcerId: string) {
     return scores?.find((item) => item.id === aigcerId)?.score ?? null;
@@ -265,6 +445,22 @@ export default function CommissionDetail() {
     return applicant.portfolio.filter((item) => ids.includes(item.id));
   }
 
+  function createContractDraftForApplicant(applicant: typeof applicants[number]) {
+    if (!commission) throw new Error('项目不存在');
+    return createContractDraft({
+      commissionId: commission.id,
+      commissionTitle: commission.title,
+      clientId: commission.authorId,
+      clientName: commission.authorNickname,
+      aigcerId: applicant.aigcerId,
+      aigcerName: applicant.aigcerNickname,
+      budgetText: commission.priceRange,
+      deliveryFormat: deliveryFormatText,
+      milestoneSummary: milestoneSummaryText,
+      escrowSummary: escrowSummaryText,
+    });
+  }
+
   async function handleApply() {
     if (!user || !commission) return;
     setApplying(true);
@@ -298,18 +494,39 @@ export default function CommissionDetail() {
 
   async function handleApplicationStatus(applicationId: string, status: 'accepted' | 'rejected') {
     if (!commission) return;
+    const applicant = applicants.find((item) => item.id === applicationId);
     setApplicationActionId(applicationId);
     try {
       await updateApplicationStatus(commission.id, applicationId, status);
+      let autoContractCreated = false;
+      let autoContractFailed = false;
+      if (status === 'accepted' && applicant && isProjectOwner && !projectContract) {
+        try {
+          await createContractDraftForApplicant(applicant);
+          autoContractCreated = true;
+          await refetchContract();
+        } catch {
+          autoContractFailed = true;
+        }
+      }
       toast({
         title: status === 'accepted' ? '已选定创作者' : '已拒绝应征',
-        description: status === 'accepted' ? '项目已进入合作中，双方工作台会同步状态。' : '该应征已从候选列表中移出。',
-      });
-      const applicant = applicants.find((item) => item.id === applicationId);
-      createProjectNotification({
-        title: status === 'accepted' ? "合作已选定" : "应征状态已更新",
         description: status === 'accepted'
-          ? `「${commission.title}」已选定 ${applicant?.aigcerNickname ?? "创作者"}，可以开始推进交付节点。`
+          ? autoContractCreated
+            ? '项目已进入合作中，合同草稿已自动生成并同步给创作者。'
+            : autoContractFailed
+              ? '项目已进入合作中，但合同草稿需要稍后手动生成。'
+              : '项目已进入合作中，双方工作台会同步状态。'
+          : '该应征已从候选列表中移出。',
+      });
+      createProjectNotification({
+        title: status === 'accepted'
+          ? autoContractCreated ? "合作已选定，合同待签署" : "合作已选定"
+          : "应征状态已更新",
+        description: status === 'accepted'
+          ? autoContractCreated
+            ? `「${commission.title}」已选定 ${applicant?.aigcerNickname ?? "创作者"}，合同草稿已生成，请确认项目范围和付款安排。`
+            : `「${commission.title}」已选定 ${applicant?.aigcerNickname ?? "创作者"}，可以开始推进交付节点。`
           : `「${commission.title}」的一条应征已被拒绝。`,
         targetPath: `/commissions/${commission.id}`,
         recipientId: applicant?.aigcerId,
@@ -318,12 +535,13 @@ export default function CommissionDetail() {
         priority: status === 'accepted' ? "high" : "normal",
       });
       setSelectedApplicantId(null);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['commission-applicants', commission.id] }),
-      queryClient.invalidateQueries({ queryKey: ['applications'] }),
-      queryClient.invalidateQueries({ queryKey: ['commissions'] }),
-      refetchApplicants(),
-    ]);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['commission-applicants', commission.id] }),
+        queryClient.invalidateQueries({ queryKey: ['applications'] }),
+        queryClient.invalidateQueries({ queryKey: ['commissions'] }),
+        queryClient.invalidateQueries({ queryKey: ['contract', commission.id] }),
+        refetchApplicants(),
+      ]);
     } catch (e: unknown) {
       toast({
         title: '操作失败',
@@ -340,12 +558,88 @@ export default function CommissionDetail() {
     toast({ title: "链接已复制", description: "可以发送给协作成员继续评估。" });
   }
 
+  async function handleSendProjectMessage() {
+    if (!commission || !user || !projectMessagePeer) return;
+    setProjectMessageBusy(true);
+    try {
+      await sendProjectMessage({
+        commissionId: commission.id,
+        senderId: user.id,
+        senderName: user.nickname,
+        senderRole: user.role,
+        recipientId: projectMessagePeer.id,
+        recipientName: projectMessagePeer.name,
+        recipientRole: projectMessagePeer.role,
+        body: projectMessageText,
+        file: projectMessageFile,
+      });
+      createProjectNotification({
+        title: "项目沟通有新消息",
+        description: `${user.nickname} 在「${commission.title}」发送了项目消息。`,
+        targetPath: `/commissions/${commission.id}`,
+        recipientId: projectMessagePeer.id,
+        recipientRole: projectMessagePeer.role,
+        actionLabel: "查看消息",
+        priority: "normal",
+      });
+      setProjectMessageText("");
+      setProjectMessageFile(null);
+      await refetchProjectMessages();
+      toast({ title: "消息已发送", description: "对方会在消息中心收到项目提醒。" });
+    } catch (e: unknown) {
+      toast({ title: "发送失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setProjectMessageBusy(false);
+    }
+  }
+
   function openApplicationEdit(applicationId: string) {
     const application = applicants.find((item) => item.id === applicationId);
     if (!application) return;
     setEditingApplicationId(applicationId);
     setEditApplicationMessage(application.message);
     setEditApplicationPrice(application.expectedPrice);
+  }
+
+  function openInvitationResponse() {
+    if (!currentUserApplication) return;
+    const existingResponse = currentUserRespondedInvitation
+      ? currentUserApplication.message.replace(/^已回应邀约：/, "")
+      : "";
+    setInvitationResponse(existingResponse || "我已查看项目需求，当前有档期，可以按节点推进并先沟通首版样片安排。");
+    setInvitationPrice(currentUserApplication.expectedPrice || commission?.priceRange || "");
+    setInvitationOpen(true);
+  }
+
+  async function handleRespondInvitation() {
+    if (!commission || !user || !currentUserApplication || !currentUserHasInvitation) return;
+    setApplicationActionId(currentUserApplication.id);
+    try {
+      await updateApplicationDraft(currentUserApplication.id, {
+        message: formatProjectInvitationResponse(invitationResponse.trim()),
+        expectedPrice: invitationPrice.trim(),
+      });
+      createProjectNotification({
+        title: "创作者已回应邀约",
+        description: `${user.nickname} 已回应「${commission.title}」的项目邀约，请进入项目候选面板查看报价和说明。`,
+        targetPath: `/commissions/${commission.id}`,
+        recipientId: commission.authorId,
+        recipientRole: "client",
+        actionLabel: "查看回应",
+        priority: "high",
+      });
+      setInvitationOpen(false);
+      toast({ title: "邀约回应已发送", description: "需求方会在项目候选面板看到你的补充说明和报价。" });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['commission-applicants', commission.id] }),
+        queryClient.invalidateQueries({ queryKey: ['applications'] }),
+        refetchApplicants(),
+      ]);
+    } catch (e: unknown) {
+      toast({ title: "回应失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setApplicationActionId(null);
+    }
   }
 
   async function handleSaveApplicationEdit() {
@@ -372,10 +666,26 @@ export default function CommissionDetail() {
 
   async function handleWithdrawApplication() {
     if (!withdrawTargetId || !commission) return;
+    const application = applicants.find((item) => item.id === withdrawTargetId);
+    const isInvitationWithdraw = isProjectInvitationApplication(application);
     setApplicationActionId(withdrawTargetId);
     try {
       await withdrawApplication(withdrawTargetId);
-      toast({ title: '已撤回应征', description: '该项目将不再把你作为候选人展示。' });
+      if (isInvitationWithdraw && application && user) {
+        createProjectNotification({
+          title: "创作者已谢绝邀约",
+          description: `${user.nickname} 已谢绝「${commission.title}」的项目邀约。`,
+          targetPath: `/commissions/${commission.id}`,
+          recipientId: commission.authorId,
+          recipientRole: "client",
+          actionLabel: "查看候选",
+          priority: "normal",
+        });
+      }
+      toast({
+        title: isInvitationWithdraw ? '已谢绝邀约' : '已撤回应征',
+        description: isInvitationWithdraw ? '该项目邀约已从你的候选项目中移除。' : '该项目将不再把你作为候选人展示。',
+      });
       setWithdrawTargetId(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['commission-applicants', commission.id] }),
@@ -467,18 +777,7 @@ export default function CommissionDetail() {
 
     setContractBusy(true);
     try {
-      await createContractDraft({
-        commissionId: commission.id,
-        commissionTitle: commission.title,
-        clientId: commission.authorId,
-        clientName: commission.authorNickname,
-        aigcerId: acceptedApplicant.aigcerId,
-        aigcerName: acceptedApplicant.aigcerNickname,
-        budgetText: commission.priceRange,
-        deliveryFormat: deliveryFormatText,
-        milestoneSummary: milestoneSummaryText,
-        escrowSummary: escrowSummaryText,
-      });
+      await createContractDraftForApplicant(acceptedApplicant);
       await refetchContract();
       createProjectNotification({
         title: "合作合同待签署",
@@ -504,7 +803,55 @@ export default function CommissionDetail() {
     try {
       const signed = await signContract(projectContract.id, role);
       await refetchContract();
-      if (role === 'client') {
+      let autoEscrowStatus: 'none' | 'created' | 'exists' | 'skipped' | 'failed' = escrowBundle ? 'exists' : 'none';
+
+      if (signed.status === 'active') {
+        if (!escrowBundle && commission) {
+          const amount = getDefaultEscrowAmount(commission.priceRange);
+          if (amount > 0) {
+            try {
+              await createEscrowDraft({
+                commissionId: commission.id,
+                totalAmount: amount,
+                createdById: signed.clientId,
+              });
+              autoEscrowStatus = 'created';
+              setEscrowAmountInput(String(amount));
+              await Promise.all([
+                refetchEscrow(),
+                queryClient.invalidateQueries({ queryKey: ['escrow', commission.id] }),
+              ]);
+            } catch {
+              autoEscrowStatus = 'failed';
+            }
+          } else {
+            autoEscrowStatus = 'skipped';
+          }
+        }
+
+        createProjectNotification({
+          title: autoEscrowStatus === 'created' ? "合同已生效，托管计划待确认" : "合作合同已生效",
+          description: autoEscrowStatus === 'created'
+            ? `「${projectContract.commissionTitle}」双方已完成签署，系统已按预算生成托管草稿，请确认付款比例。`
+            : `「${projectContract.commissionTitle}」双方已完成签署，可以继续推进交付和托管。`,
+          targetPath: `/commissions/${projectContract.commissionId}`,
+          recipientId: projectContract.clientId,
+          recipientRole: "client",
+          actionLabel: autoEscrowStatus === 'created' ? "确认托管" : "查看合同",
+          priority: "high",
+        });
+        createProjectNotification({
+          title: "合作合同已生效",
+          description: autoEscrowStatus === 'created'
+            ? `「${projectContract.commissionTitle}」合同已生效，等待甲方确认托管付款计划。`
+            : `「${projectContract.commissionTitle}」双方已完成签署，可以继续推进交付和托管。`,
+          targetPath: `/commissions/${projectContract.commissionId}`,
+          recipientId: projectContract.aigcerId,
+          recipientRole: "aigcer",
+          actionLabel: "进入项目",
+          priority: "normal",
+        });
+      } else if (role === 'client') {
         createProjectNotification({
           title: "合作合同待你签署",
           description: `「${projectContract.commissionTitle}」甲方已签署，请你确认合同。`,
@@ -514,18 +861,29 @@ export default function CommissionDetail() {
           actionLabel: "签署合同",
           priority: "high",
         });
-      } else if (signed.status === 'active') {
+      } else {
         createProjectNotification({
-          title: "合作合同已生效",
-          description: `「${projectContract.commissionTitle}」双方已完成签署，可以继续推进交付和托管。`,
+          title: "合作合同待你签署",
+          description: `「${projectContract.commissionTitle}」乙方已签署，请你确认合同并推进托管。`,
           targetPath: `/commissions/${projectContract.commissionId}`,
           recipientId: projectContract.clientId,
           recipientRole: "client",
-          actionLabel: "查看合同",
-          priority: "normal",
+          actionLabel: "签署合同",
+          priority: "high",
         });
       }
-      toast({ title: "签署已记录", description: role === 'client' ? "甲方签署时间已写入合同。" : "乙方签署时间已写入合同。" });
+      toast({
+        title: "签署已记录",
+        description: signed.status === 'active'
+          ? autoEscrowStatus === 'created'
+            ? "双方已完成签署，托管草稿已自动生成。"
+            : autoEscrowStatus === 'failed'
+              ? "双方已完成签署，但托管草稿需要稍后手动创建。"
+              : "双方已完成签署，合同已生效。"
+          : role === 'client'
+            ? "甲方签署时间已写入合同，等待乙方确认。"
+            : "乙方签署时间已写入合同，等待甲方确认。",
+      });
     } catch (e: unknown) {
       toast({ title: "签署失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
     } finally {
@@ -641,6 +999,54 @@ export default function CommissionDetail() {
     }
   }
 
+  function openDeliveryReview(deliveryId: string) {
+    setReviewDeliveryId(deliveryId);
+    setDeliveryReviewText("");
+    setDeliveryReviewType("note");
+  }
+
+  async function handleAddDeliveryReviewComment() {
+    if (!commission || !user || !reviewDelivery) return;
+    setDeliveryReviewBusy(true);
+    try {
+      await addDeliveryReviewComment({
+        commissionId: commission.id,
+        deliveryId: reviewDelivery.id,
+        stageId: reviewDelivery.stageId,
+        authorId: user.id,
+        authorName: user.nickname,
+        authorRole: user.role,
+        body: deliveryReviewText,
+        commentType: deliveryReviewType,
+      });
+
+      const recipient = user.id === commission.authorId
+        ? acceptedApplicant
+          ? { id: acceptedApplicant.aigcerId, role: "aigcer" as const }
+          : null
+        : { id: commission.authorId, role: "client" as const };
+      if (recipient) {
+        createProjectNotification({
+          title: deliveryReviewType === 'change_request' ? "交付版本有修改批注" : "交付版本有新批注",
+          description: `${user.nickname} 在「${commission.title}」的 ${reviewDelivery.stageLabel} V${reviewDelivery.version} 留下了批注。`,
+          targetPath: `/commissions/${commission.id}`,
+          recipientId: recipient.id,
+          recipientRole: recipient.role,
+          actionLabel: "查看批注",
+          priority: deliveryReviewType === 'change_request' ? "high" : "normal",
+        });
+      }
+
+      setDeliveryReviewText("");
+      await refetchDeliveryReviewComments();
+      toast({ title: "批注已保存", description: "该版本的审核记录已更新。" });
+    } catch (e: unknown) {
+      toast({ title: "批注失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
+    } finally {
+      setDeliveryReviewBusy(false);
+    }
+  }
+
   async function handleRequestChanges() {
     if (!commission || !user || !canConfirmStage) return;
     setStageActionBusy(true);
@@ -679,6 +1085,9 @@ export default function CommissionDetail() {
         commissionTitle: commission.title,
         stageId: currentStage?.id,
         stageLabel: currentStage?.label,
+        deliveryId: currentDelivery?.id,
+        deliveryVersion: currentDelivery?.version,
+        deliveryTitle: currentDelivery?.title,
         applicantId: acceptedApplicant?.aigcerId,
         applicantName: acceptedApplicant?.aigcerNickname,
         reporterId: user.id,
@@ -686,11 +1095,32 @@ export default function CommissionDetail() {
         reason: disputeReason.trim(),
         expectation: disputeExpectation.trim(),
       });
+      let freezeStatus: 'frozen' | 'skipped' | 'failed' = 'skipped';
+      if (currentStage && escrowBundle?.plan.status === 'funded') {
+        try {
+          await freezeEscrowMilestone({
+            commissionId: commission.id,
+            stageId: currentStage.id,
+            frozenById: user.id,
+          });
+          freezeStatus = 'frozen';
+          await refetchEscrow();
+        } catch {
+          freezeStatus = 'failed';
+        }
+      }
       setDisputeOpen(false);
       setDisputeReason("");
       setDisputeExpectation("");
       await refetchDisputes();
-      toast({ title: "投诉/纠纷已提交", description: "平台管理员会在后台审核中心处理并留存记录。" });
+      toast({
+        title: freezeStatus === 'frozen' ? "纠纷已提交，当前节点款项已冻结" : "投诉/纠纷已提交",
+        description: freezeStatus === 'frozen'
+          ? "平台管理员会在后台审核中心处理，冻结节点在裁决前不会自动释放。"
+          : freezeStatus === 'failed'
+            ? "纠纷已记录，但托管冻结需要管理员稍后复核。"
+            : "平台管理员会在后台审核中心处理并留存记录。",
+      });
     } catch (e: unknown) {
       toast({ title: "提交失败", description: e instanceof Error ? e.message : "请稍后重试", variant: "destructive" });
     } finally {
@@ -701,10 +1131,17 @@ export default function CommissionDetail() {
   function getApplyButton() {
     if (!commission) return null;
     if (isPendingReview) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目审核中</Button>;
-    if (isClosed) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已关闭招募</Button>;
-    if (isExpired) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已截止</Button>;
     if (acceptedApplicant) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已进入合作中</Button>;
     if (!user) return <Button className="w-full rounded-full text-base" size="lg" onClick={() => navigate('/login')}>登录后应征</Button>;
+    if (currentUserHasInvitation) {
+      return (
+        <Button className="w-full rounded-full text-base" size="lg" onClick={openInvitationResponse}>
+          {currentUserRespondedInvitation ? "更新邀约回应" : "回应项目邀约"}
+        </Button>
+      );
+    }
+    if (isClosed) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已关闭招募</Button>;
+    if (isExpired) return <Button className="w-full rounded-full text-base" size="lg" disabled>项目已截止</Button>;
     if (isProjectOwner) return <Button className="w-full rounded-full text-base" size="lg" disabled>不能应征自己的项目</Button>;
     if (user.role !== 'aigcer') return <Button className="w-full rounded-full text-base" size="lg" disabled>仅创作者可应征</Button>;
     if (user.verificationStatus !== 'verified') return <Button className="w-full rounded-full text-base" size="lg" onClick={() => navigate('/onboarding/aigcer')}>完成认证后应征</Button>;
@@ -850,6 +1287,134 @@ export default function CommissionDetail() {
               </div>
             )}
 
+            {currentUserHasInvitation && currentUserApplication && !acceptedApplicant && (
+              <div className="mb-6 rounded-2xl border border-primary/20 bg-card p-5 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Project Invitation</p>
+                    <h2 className="mt-1 text-lg font-bold text-foreground">收到 {commission.authorNickname} 的项目邀约</h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                      需求方通过创作者广场将你加入候选名单。你可以补充档期、报价和合作计划，或谢绝本次邀约。
+                    </p>
+                    <p className="mt-3 rounded-xl bg-muted p-3 text-sm leading-6 text-muted-foreground">
+                      {currentUserApplication.message}
+                    </p>
+                  </div>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-40">
+                    <Badge variant={currentUserRespondedInvitation ? "default" : "outline"} className="w-fit rounded-full">
+                      {currentUserRespondedInvitation ? "已回应" : "待回应"}
+                    </Badge>
+                    <Button className="rounded-full" onClick={openInvitationResponse}>
+                      {currentUserRespondedInvitation ? "更新回应" : "回应邀约"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="rounded-full"
+                      disabled={applicationActionId === currentUserApplication.id}
+                      onClick={() => setWithdrawTargetId(currentUserApplication.id)}
+                    >
+                      谢绝邀约
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {canUseProjectMessages && projectMessagePeer && (
+              <div className="mb-6 rounded-2xl border border-border bg-card p-6 shadow-sm">
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Project Messages</p>
+                    <h2 className="mt-1 text-lg font-bold text-foreground">项目沟通</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      围绕邀约、报价、合同和交付节点同步关键沟通，消息会保留在项目详情中。
+                    </p>
+                  </div>
+                  {isProjectOwner && messageCandidates.length > 1 && (
+                    <Select value={selectedMessageCandidate?.aigcerId ?? ""} onValueChange={setProjectMessageRecipientId}>
+                      <SelectTrigger className="h-10 rounded-full sm:w-48">
+                        <SelectValue placeholder="选择沟通对象" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {messageCandidates.map((candidate) => (
+                          <SelectItem key={candidate.id} value={candidate.aigcerId}>
+                            {candidate.aigcerNickname}{candidate.status === "accepted" ? "（合作中）" : "（候选）"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-border bg-muted/30 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <MessageCircle className="h-4 w-4 text-primary" />
+                      与 {projectMessagePeer.name} 沟通
+                    </div>
+                    <Badge variant="outline" className="rounded-full">{visibleProjectMessages.length} 条</Badge>
+                  </div>
+                  {visibleProjectMessages.length === 0 ? (
+                    <p className="rounded-lg bg-background p-3 text-sm text-muted-foreground">
+                      还没有项目消息。可以先确认档期、首版样片范围、修改次数或下一步交付资料。
+                    </p>
+                  ) : (
+                    <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+                      {visibleProjectMessages.map((message) => {
+                        const mine = message.senderId === user?.id;
+                        return (
+                          <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                            <div className={`max-w-[86%] rounded-2xl border p-3 text-sm ${mine ? "border-primary/20 bg-primary text-primary-foreground" : "border-border bg-background text-foreground"}`}>
+                              <div className="mb-1 flex flex-wrap items-center gap-2 text-xs opacity-80">
+                                <span>{message.senderName}</span>
+                                <span>{formatMessageTime(message.createdAt)}</span>
+                              </div>
+                              {message.body && <p className="whitespace-pre-line leading-6">{message.body}</p>}
+                              {message.attachment && (
+                                <a
+                                  className={`mt-2 inline-flex items-center gap-2 rounded-lg px-2 py-1 text-xs ${mine ? "bg-primary-foreground/15 text-primary-foreground" : "bg-muted text-primary"}`}
+                                  href={message.attachment.fileUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  <Paperclip className="h-3.5 w-3.5" />
+                                  {message.attachment.fileName}
+                                  {message.attachment.size ? ` · ${formatFileSize(message.attachment.size)}` : ""}
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 space-y-3 rounded-xl bg-muted p-4">
+                  <Textarea
+                    rows={3}
+                    placeholder={`发送给 ${projectMessagePeer.name}：确认资料、报价、档期或交付问题...`}
+                    value={projectMessageText}
+                    onChange={(event) => setProjectMessageText(event.target.value)}
+                  />
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-full border border-border bg-background px-3 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
+                      <UploadCloud className="h-4 w-4" />
+                      <span className="max-w-56 truncate">{projectMessageFile ? projectMessageFile.name : "添加附件"}</span>
+                      <input type="file" className="hidden" onChange={(event) => setProjectMessageFile(event.target.files?.[0] ?? null)} />
+                    </label>
+                    <Button
+                      className="rounded-full"
+                      onClick={handleSendProjectMessage}
+                      disabled={projectMessageBusy || (!projectMessageText.trim() && !projectMessageFile)}
+                    >
+                      {projectMessageBusy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />发送中...</> : <><Send className="mr-2 h-4 w-4" />发送消息</>}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {acceptedApplicant && (
               <div className="mb-6 rounded-2xl border border-primary/20 bg-accent/60 p-5 shadow-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -942,7 +1507,7 @@ export default function CommissionDetail() {
 
                     <div className="flex flex-col gap-3 rounded-xl bg-muted p-4 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm text-muted-foreground">
-                        双方都完成签署后合同状态会变为已生效，后续交付和托管释放可按合同摘要推进。
+                        双方都完成签署后合同状态会变为已生效，系统会自动生成托管草稿，甲方确认比例后即可按节点释放。
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -980,7 +1545,7 @@ export default function CommissionDetail() {
                   </div>
                   {escrowBundle && (
                     <Badge variant={escrowBundle.plan.status === 'draft' ? 'outline' : 'default'} className="w-fit rounded-full">
-                      {escrowBundle.plan.status === 'completed' ? '已全部释放' : escrowBundle.plan.status === 'funded' ? '已托管' : '待确认托管'}
+                      {getEscrowPlanStatusLabel(escrowBundle.plan.status)}
                     </Badge>
                   )}
                 </div>
@@ -1045,7 +1610,7 @@ export default function CommissionDetail() {
                                 <p className="mt-1 text-xs text-muted-foreground">{formatCurrency(amount)}</p>
                               </div>
                               <Badge variant={milestone.status === 'released' ? 'default' : 'outline'} className="rounded-full">
-                                {milestone.status === 'released' ? '已释放' : '待释放'}
+                                {getEscrowMilestoneStatusLabel(milestone.status)}
                               </Badge>
                             </div>
                             {escrowBundle.plan.status === 'draft' && isProjectOwner ? (
@@ -1084,12 +1649,14 @@ export default function CommissionDetail() {
 
                     {escrowBundle.releases.length > 0 && (
                       <div className="rounded-xl border border-border p-4">
-                        <p className="mb-3 text-sm font-semibold text-foreground">释放流水</p>
+                        <p className="mb-3 text-sm font-semibold text-foreground">结算流水</p>
                         <div className="space-y-2">
                           {escrowBundle.releases.slice(0, 5).map((release) => (
                             <div key={release.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted p-3 text-sm">
-                              <span className="text-foreground">{release.stageLabel}</span>
-                              <span className="font-semibold text-primary">{formatCurrency(release.amount)}</span>
+                              <span className="text-foreground">{release.stageLabel} · {getEscrowReleaseTypeLabel(release.releaseType)}</span>
+                              <span className={`font-semibold ${release.releaseType === 'refund' ? 'text-muted-foreground' : 'text-primary'}`}>
+                                {formatCurrency(release.amount)}
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -1155,35 +1722,106 @@ export default function CommissionDetail() {
                         {deliveries.length === 0 && (
                           <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">还没有交付记录，乙方提交当前节点后会在这里形成版本记录。</p>
                         )}
-                        {deliveries.slice(0, 4).map((item) => (
-                          <div key={item.id} className="rounded-lg bg-muted p-3 text-sm">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <FileText className="h-4 w-4 text-primary" />
-                              <span className="font-medium text-foreground">{item.stageLabel} V{item.version}</span>
-                              <Badge variant="outline" className="rounded-full">
-                                {item.status === 'confirmed' ? '已确认' : item.status === 'changes_requested' ? '需修改' : '待确认'}
-                              </Badge>
+                        {deliveries.slice(0, 4).map((item) => {
+                          const commentCount = deliveryCommentCounts[item.id] ?? 0;
+                          const latestComment = deliveryLatestComments[item.id];
+                          const linkedDisputes = deliveryDisputesById[item.id] ?? [];
+                          const latestDispute = linkedDisputes[0];
+                          const hasLinkedOpenDispute = hasOpenDispute(linkedDisputes);
+                          return (
+                            <div key={item.id} className="rounded-lg bg-muted p-3 text-sm">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <FileText className="h-4 w-4 text-primary" />
+                                <span className="font-medium text-foreground">{item.stageLabel} V{item.version}</span>
+                                <Badge variant="outline" className="rounded-full">
+                                  {item.status === 'confirmed' ? '已确认' : item.status === 'changes_requested' ? '需修改' : '待确认'}
+                                </Badge>
+                                {linkedDisputes.length > 0 && (
+                                  <Badge variant={hasLinkedOpenDispute ? 'destructive' : 'secondary'} className="rounded-full">
+                                    {getDeliveryDisputeLabel(linkedDisputes)}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="mt-2 text-muted-foreground">{item.description}</p>
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                {item.fileUrl && (
+                                  <a className="inline-flex items-center rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-primary hover:border-primary/50" href={item.fileUrl} target="_blank" rel="noreferrer">
+                                    <Paperclip className="mr-1.5 h-3.5 w-3.5" />{item.fileName}
+                                  </a>
+                                )}
+                                <Button variant="outline" size="sm" className="h-8 rounded-full px-3 text-xs" onClick={() => openDeliveryReview(item.id)}>
+                                  <MessageCircle className="mr-1.5 h-3.5 w-3.5" />批注{commentCount ? ` ${commentCount}` : ""}
+                                </Button>
+                              </div>
+                              {latestComment && (
+                                <p className="mt-2 rounded-md bg-background p-2 text-xs text-muted-foreground">
+                                  最新批注：{latestComment.body}
+                                </p>
+                              )}
+                              {latestDispute && (
+                                <div className="mt-2 rounded-md border border-border bg-background p-2 text-xs">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <ShieldAlert className="h-3.5 w-3.5 text-primary" />
+                                    <span className="font-medium text-foreground">
+                                      关联纠纷：{getDisputeStatusLabel(latestDispute.status)}
+                                    </span>
+                                    {linkedDisputes.length > 1 && (
+                                      <span className="text-muted-foreground">共 {linkedDisputes.length} 条</span>
+                                    )}
+                                  </div>
+                                  <p className="mt-1 line-clamp-2 leading-5 text-muted-foreground">{latestDispute.reason}</p>
+                                  <p className="mt-1 font-medium text-foreground">{getDisputeResolutionLabel(latestDispute.resolutionAction)}</p>
+                                  {latestDispute.resolutionNote && (
+                                    <p className="mt-1 line-clamp-2 leading-5 text-muted-foreground">{latestDispute.resolutionNote}</p>
+                                  )}
+                                </div>
+                              )}
+                              {item.feedback && <p className="mt-2 rounded-md bg-background p-2 text-xs text-muted-foreground">反馈：{item.feedback}</p>}
                             </div>
-                            <p className="mt-2 text-muted-foreground">{item.description}</p>
-                            {item.fileUrl && (
-                              <a className="mt-2 inline-flex text-xs font-medium text-primary hover:underline" href={item.fileUrl} target="_blank" rel="noreferrer">
-                                查看附件：{item.fileName}
-                              </a>
-                            )}
-                            {item.feedback && <p className="mt-2 rounded-md bg-background p-2 text-xs text-muted-foreground">反馈：{item.feedback}</p>}
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                     <div className="rounded-xl border border-border p-4">
-                      <p className="text-sm font-semibold text-foreground">争议处理</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-foreground">争议处理</p>
+                        {disputes.length > 0 && <Badge variant="secondary" className="rounded-full">{disputes.length} 条</Badge>}
+                      </div>
                       <p className="mt-2 text-xs leading-5 text-muted-foreground">交付范围、修改次数、验收结果有争议时，可提交平台介入，后台会形成审核日志。</p>
                       <Button variant="outline" className="mt-4 w-full rounded-full" onClick={() => setDisputeOpen(true)}>
                         <ShieldAlert className="mr-2 h-4 w-4" /> 发起投诉/纠纷
                       </Button>
-                      {disputes.length > 0 && (
-                        <p className="mt-3 text-xs text-muted-foreground">已有 {disputes.length} 条纠纷记录，最近状态：{disputes[0].status}</p>
-                      )}
+                      <div className="mt-4 space-y-3">
+                        {disputes.length === 0 && (
+                          <p className="rounded-lg bg-muted p-3 text-xs leading-5 text-muted-foreground">暂无纠纷记录。</p>
+                        )}
+                        {disputes.slice(0, 3).map((dispute) => (
+                          <div key={dispute.id} className="rounded-lg bg-muted p-3 text-xs">
+                            <div className="mb-2 flex flex-wrap items-center gap-2">
+                              <Badge variant={dispute.status === 'resolved' ? 'default' : dispute.status === 'rejected' ? 'secondary' : 'outline'} className="rounded-full">
+                                {getDisputeStatusLabel(dispute.status)}
+                              </Badge>
+                              <span className="text-muted-foreground">{getDisputeDeliveryLabel(dispute)}</span>
+                            </div>
+                            {dispute.deliveryTitle && (
+                              <p className="mb-1 font-medium text-foreground">{dispute.deliveryTitle}</p>
+                            )}
+                            <p className="line-clamp-2 leading-5 text-muted-foreground">{dispute.reason}</p>
+                            {dispute.resolutionNote ? (
+                              <div className="mt-2 rounded-md bg-background p-2">
+                                <p className="font-medium text-foreground">{getDisputeResolutionLabel(dispute.resolutionAction)}</p>
+                                <p className="mt-1 line-clamp-3 leading-5 text-muted-foreground">{dispute.resolutionNote}</p>
+                                <p className="mt-1 text-[11px] text-muted-foreground">
+                                  {dispute.resolvedByName ? `${dispute.resolvedByName} · ` : ""}
+                                  {dispute.resolvedAt ? formatMessageTime(dispute.resolvedAt) : "已记录"}
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="mt-2 rounded-md bg-background p-2 text-muted-foreground">平台暂未给出裁决。</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1363,6 +2001,126 @@ export default function CommissionDetail() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!reviewDeliveryId} onOpenChange={(open) => {
+        if (!open) setReviewDeliveryId(null);
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>交付预览与批注</DialogTitle>
+            <DialogDescription>
+              {reviewDelivery ? `${reviewDelivery.stageLabel} V${reviewDelivery.version}` : "交付版本"}
+            </DialogDescription>
+          </DialogHeader>
+          {reviewDelivery && (
+            <div className="space-y-4 py-2">
+              <div className="rounded-xl border border-border p-4">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="rounded-full">
+                    {reviewDelivery.status === 'confirmed' ? '已确认' : reviewDelivery.status === 'changes_requested' ? '需修改' : '待确认'}
+                  </Badge>
+                  {reviewDeliveryDisputes.length > 0 && (
+                    <Badge variant={hasOpenDispute(reviewDeliveryDisputes) ? 'destructive' : 'secondary'} className="rounded-full">
+                      {getDeliveryDisputeLabel(reviewDeliveryDisputes)}
+                    </Badge>
+                  )}
+                  <span className="text-xs text-muted-foreground">提交人：{reviewDelivery.submittedByName}</span>
+                </div>
+                <p className="font-medium text-foreground">{reviewDelivery.title}</p>
+                <p className="mt-2 whitespace-pre-line text-sm leading-6 text-muted-foreground">{reviewDelivery.description}</p>
+                {reviewDelivery.fileUrl && (
+                  <a className="mt-3 inline-flex items-center rounded-full border border-border px-3 py-1.5 text-xs font-medium text-primary hover:border-primary/50" href={reviewDelivery.fileUrl} target="_blank" rel="noreferrer">
+                    <Paperclip className="mr-1.5 h-3.5 w-3.5" />打开附件：{reviewDelivery.fileName}
+                  </a>
+                )}
+              </div>
+
+              {reviewDeliveryDisputes.length > 0 && (
+                <div className="rounded-xl border border-border p-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">关联纠纷与裁决</p>
+                    <Badge variant="secondary" className="rounded-full">{reviewDeliveryDisputes.length} 条</Badge>
+                  </div>
+                  <div className="space-y-2">
+                    {reviewDeliveryDisputes.map((dispute) => (
+                      <div key={dispute.id} className="rounded-lg bg-muted p-3 text-sm">
+                        <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
+                          <Badge variant={dispute.status === 'resolved' ? 'default' : dispute.status === 'rejected' ? 'secondary' : 'outline'} className="rounded-full">
+                            {getDisputeStatusLabel(dispute.status)}
+                          </Badge>
+                          <span className="text-muted-foreground">{getDisputeDeliveryLabel(dispute)}</span>
+                        </div>
+                        <p className="whitespace-pre-line text-muted-foreground">{dispute.reason}</p>
+                        <div className="mt-2 rounded-md bg-background p-2 text-xs">
+                          <p className="font-medium text-foreground">{getDisputeResolutionLabel(dispute.resolutionAction)}</p>
+                          <p className="mt-1 whitespace-pre-line leading-5 text-muted-foreground">
+                            {dispute.resolutionNote || "平台暂未给出裁决。"}
+                          </p>
+                          {(dispute.resolvedByName || dispute.resolvedAt) && (
+                            <p className="mt-1 text-muted-foreground">
+                              {dispute.resolvedByName ? `${dispute.resolvedByName} · ` : ""}
+                              {dispute.resolvedAt ? formatMessageTime(dispute.resolvedAt) : "已记录"}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-foreground">版本批注</p>
+                  <Badge variant="secondary" className="rounded-full">{reviewDeliveryComments.length} 条</Badge>
+                </div>
+                <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
+                  {reviewDeliveryComments.length === 0 && (
+                    <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">暂无批注。</p>
+                  )}
+                  {reviewDeliveryComments.map((comment) => (
+                    <div key={comment.id} className="rounded-lg bg-muted p-3 text-sm">
+                      <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">{comment.authorName}</span>
+                        <Badge variant={comment.commentType === 'change_request' ? 'default' : 'outline'} className="rounded-full">
+                          {getDeliveryReviewTypeLabel(comment.commentType)}
+                        </Badge>
+                        <span>{formatMessageTime(comment.createdAt)}</span>
+                      </div>
+                      <p className="whitespace-pre-line leading-6 text-muted-foreground">{comment.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
+                <Select value={deliveryReviewType} onValueChange={(value) => setDeliveryReviewType(value as DeliveryReviewComment['commentType'])}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="note">普通批注</SelectItem>
+                    <SelectItem value="change_request">修改要求</SelectItem>
+                    <SelectItem value="approval">确认意见</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Textarea
+                  rows={3}
+                  placeholder="写下这个版本需要保留的审核意见..."
+                  value={deliveryReviewText}
+                  onChange={(event) => setDeliveryReviewText(event.target.value)}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReviewDeliveryId(null)}>关闭</Button>
+            <Button onClick={handleAddDeliveryReviewComment} disabled={deliveryReviewBusy || deliveryReviewText.trim().length < 3}>
+              {deliveryReviewBusy ? "保存中..." : "保存批注"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={feedbackOpen} onOpenChange={setFeedbackOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>要求修改</DialogTitle></DialogHeader>
@@ -1381,6 +2139,11 @@ export default function CommissionDetail() {
         <DialogContent>
           <DialogHeader><DialogTitle>发起投诉/纠纷</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
+            <p className="rounded-lg bg-muted p-3 text-sm leading-6 text-muted-foreground">
+              当前关联：{currentDelivery
+                ? `${currentDelivery.stageLabel} V${currentDelivery.version} · ${currentDelivery.title}`
+                : `${currentStage?.label ?? "当前节点"}，暂无待确认交付版本`}
+            </p>
             <div>
               <Label>问题说明</Label>
               <Textarea className="mt-1" rows={4} placeholder="说明争议发生在哪个节点、双方分歧是什么、已有沟通结果..." value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} />
@@ -1393,6 +2156,48 @@ export default function CommissionDetail() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDisputeOpen(false)}>取消</Button>
             <Button onClick={handleCreateDispute} disabled={stageActionBusy || disputeReason.trim().length < 8 || disputeExpectation.trim().length < 4}>提交平台处理</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={invitationOpen} onOpenChange={setInvitationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>回应项目邀约</DialogTitle>
+            <DialogDescription>
+              补充你的档期、报价范围和首版交付计划，需求方会在候选面板中看到更新。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>回应说明</Label>
+              <Textarea
+                className="mt-1"
+                rows={5}
+                placeholder="例如：我本周可排期，建议先确认脚本和参考风格，2 天内提供首版样片..."
+                value={invitationResponse}
+                onChange={(event) => setInvitationResponse(event.target.value)}
+              />
+              <p className="mt-1 text-right text-xs text-muted-foreground">{invitationResponse.length}/240</p>
+            </div>
+            <div>
+              <Label>期望报价</Label>
+              <Input
+                className="mt-1"
+                placeholder="如：¥8000，含 2 轮修改"
+                value={invitationPrice}
+                onChange={(event) => setInvitationPrice(event.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInvitationOpen(false)}>取消</Button>
+            <Button
+              onClick={handleRespondInvitation}
+              disabled={invitationResponse.trim().length < 8 || !invitationPrice.trim() || applicationActionId === currentUserApplication?.id}
+            >
+              {applicationActionId === currentUserApplication?.id ? "发送中..." : "发送回应"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1578,14 +2383,20 @@ export default function CommissionDetail() {
       <AlertDialog open={!!withdrawTargetId} onOpenChange={(open) => !open && setWithdrawTargetId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>撤回应征？</AlertDialogTitle>
+            <AlertDialogTitle>
+              {isProjectInvitationApplication(applicants.find((item) => item.id === withdrawTargetId)) ? "谢绝邀约？" : "撤回应征？"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              撤回后，需求方将不再把你作为该项目的候选人。若之后想再次应征，需要重新提交。
+              {isProjectInvitationApplication(applicants.find((item) => item.id === withdrawTargetId))
+                ? "谢绝后，需求方会收到通知，你也会从该项目候选中移除。"
+                : "撤回后，需求方将不再把你作为该项目的候选人。若之后想再次应征，需要重新提交。"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleWithdrawApplication}>确认撤回</AlertDialogAction>
+            <AlertDialogAction onClick={handleWithdrawApplication}>
+              {isProjectInvitationApplication(applicants.find((item) => item.id === withdrawTargetId)) ? "确认谢绝" : "确认撤回"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
